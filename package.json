@@ -27,6 +27,12 @@
     "extensions": [
       "./extensions/*.ts",
       "./extensions/*/index.ts"
+    ],
+    "prompts": [
+      "./prompts"
+    ],
+    "themes": [
+      "./themes"
     ]
   },
   "peerDependencies": {

@@ -2,9 +2,17 @@
  * Agent discovery and configuration
  */
 
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+
+/** Directory of agent .md files bundled with this extension. */
+const BUNDLED_AGENTS_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "agents",
+);
 
 export type AgentScope = "user" | "project" | "both";
 
@@ -138,4 +146,71 @@ export function formatAgentList(
       .join("; "),
     remaining,
   };
+}
+
+export interface AgentSeedResult {
+  /** Filenames copied (missing or checksum differed). */
+  copied: string[];
+  /** Files already matching the bundled version. */
+  upToDate: number;
+  /** Resolved target directory (~/.pi/agent/agents). */
+  targetDir: string;
+}
+
+function sha256(data: Buffer): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
+/**
+ * Seed the user agent directory (~/.pi/agent/agents) from the .md files
+ * bundled with this extension.
+ *
+ * A bundled agent is copied when its target is missing or its checksum
+ * differs; matching files are skipped. Idempotent. The bundled files are the
+ * source of truth — edit them in the repo and reload to propagate. Local edits
+ * to the seeded files are overwritten on the next seed.
+ */
+export async function seedBundledAgents(): Promise<AgentSeedResult> {
+  const targetDir = path.join(getAgentDir(), "agents");
+  await fs.promises.mkdir(targetDir, { recursive: true });
+
+  const copied: string[] = [];
+  let upToDate = 0;
+
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(BUNDLED_AGENTS_DIR, {
+      withFileTypes: true,
+    });
+  } catch {
+    return { copied, upToDate: 0, targetDir };
+  }
+
+  for (const entry of entries) {
+    if (!entry.name.endsWith(".md")) continue;
+    if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+
+    const src = path.join(BUNDLED_AGENTS_DIR, entry.name);
+    const dst = path.join(targetDir, entry.name);
+
+    const srcData = await fs.promises.readFile(src);
+    const srcHash = sha256(srcData);
+
+    let needsCopy = true;
+    try {
+      const dstData = await fs.promises.readFile(dst);
+      if (sha256(dstData) === srcHash) needsCopy = false;
+    } catch {
+      // target missing → copy
+    }
+
+    if (needsCopy) {
+      await fs.promises.copyFile(src, dst);
+      copied.push(entry.name);
+    } else {
+      upToDate++;
+    }
+  }
+
+  return { copied, upToDate, targetDir };
 }

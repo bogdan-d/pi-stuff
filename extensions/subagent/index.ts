@@ -22,7 +22,12 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, getMarkdownTheme, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
+import {
+  type AgentConfig,
+  type AgentScope,
+  discoverAgents,
+  seedBundledAgents,
+} from "./agents.ts";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
@@ -501,6 +506,25 @@ const SubagentParams = Type.Object({
 });
 
 export default function (pi: ExtensionAPI) {
+  // Seed ~/.pi/agent/agents from the .md files bundled with this extension.
+  // Copies when missing or checksum differs; bundled files are canonical.
+  pi.on("session_start", async (event, ctx) => {
+    if (event.reason !== "startup" && event.reason !== "reload") return;
+    try {
+      const result = await seedBundledAgents();
+      if (result.copied.length > 0) {
+        ctx.ui.notify(
+          `subagent: seeded ${result.copied.length} agent(s) → ${result.targetDir}: ${result.copied.join(
+            ", ",
+          )}`,
+          "info",
+        );
+      }
+    } catch (err) {
+      ctx.ui.notify(`subagent: agent seed failed: ${String(err)}`, "error");
+    }
+  });
+
   pi.registerTool({
     name: "subagent",
     label: "Subagent",
