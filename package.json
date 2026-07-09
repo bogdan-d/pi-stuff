@@ -25,27 +25,27 @@
 	},
 	"pi": {
 		"extensions": [
-			"./extensions/*.ts",
-			"./extensions/*/index.ts",
-			"!./extensions/custom-footer.ts",
-			"!./extensions/custom-header.ts",
-			"!./extensions/dynamic-resources/index.ts",
-			"!./extensions/dynamic-tools.ts",
-			"!./extensions/git-merge-and-resolve.ts",
-			"!./extensions/hidden-thinking-label.ts",
-			"!./extensions/message-renderer.ts",
-			"!./extensions/prompt-customizer.ts",
-			"!./extensions/rainbow-editor.ts",
-			"!./extensions/status-line.ts",
-			"!./extensions/truncated-tool.ts",
-			"!./extensions/widget-placement.ts",
-			"!./extensions/working-indicator.ts"
+			"extensions/*.ts",
+			"extensions/*/index.ts",
+			"!extensions/custom-footer.ts",
+			"!extensions/custom-header.ts",
+			"!extensions/dynamic-resources/index.ts",
+			"!extensions/dynamic-tools.ts",
+			"!extensions/git-merge-and-resolve.ts",
+			"!extensions/hidden-thinking-label.ts",
+			"!extensions/message-renderer.ts",
+			"!extensions/prompt-customizer.ts",
+			"!extensions/rainbow-editor.ts",
+			"!extensions/status-line.ts",
+			"!extensions/truncated-tool.ts",
+			"!extensions/widget-placement.ts",
+			"!extensions/working-indicator.ts"
 		],
 		"prompts": [
-			"./prompts"
+			"prompts"
 		],
 		"themes": [
-			"./themes"
+			"themes"
 		]
 	},
 	"peerDependencies": {
