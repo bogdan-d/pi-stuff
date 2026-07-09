@@ -26,7 +26,8 @@
 	"pi": {
 		"extensions": [
 			"./extensions/*.ts",
-			"./extensions/*/index.ts"
+			"./extensions/*/index.ts",
+			"!./extensions/dynamic-resources/index.ts"
 		],
 		"prompts": [
 			"./prompts"
