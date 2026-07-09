@@ -14,9 +14,17 @@
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
-import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.ts";
+import {
+	extractTodoItems,
+	isSafeCommand,
+	markCompletedSteps,
+	type TodoItem,
+} from "./utils.ts";
 
 // Tools
 const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "questionnaire"];
@@ -50,7 +58,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		// Footer status
 		if (executionMode && todoItems.length > 0) {
 			const completed = todoItems.filter((t) => t.completed).length;
-			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", `📋 ${completed}/${todoItems.length}`));
+			ctx.ui.setStatus(
+				"plan-mode",
+				ctx.ui.theme.fg("accent", `📋 ${completed}/${todoItems.length}`),
+			);
 		} else if (planModeEnabled) {
 			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", "⏸ plan"));
 		} else {
@@ -62,7 +73,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			const lines = todoItems.map((item) => {
 				if (item.completed) {
 					return (
-						ctx.ui.theme.fg("success", "☑ ") + ctx.ui.theme.fg("muted", ctx.ui.theme.strikethrough(item.text))
+						ctx.ui.theme.fg("success", "☑ ") +
+						ctx.ui.theme.fg("muted", ctx.ui.theme.strikethrough(item.text))
 					);
 				}
 				return `${ctx.ui.theme.fg("muted", "☐ ")}${item.text}`;
@@ -108,7 +120,11 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify("No todos. Create a plan first with /plan", "info");
 				return;
 			}
-			const list = todoItems.map((item, i) => `${i + 1}. ${item.completed ? "✓" : "○"} ${item.text}`).join("\n");
+			const list = todoItems
+				.map(
+					(item, i) => `${i + 1}. ${item.completed ? "✓" : "○"} ${item.text}`,
+				)
+				.join("\n");
 			ctx.ui.notify(`Plan Progress:\n${list}`, "info");
 		},
 	});
@@ -147,7 +163,9 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				}
 				if (Array.isArray(content)) {
 					return !content.some(
-						(c) => c.type === "text" && (c as TextContent).text?.includes("[PLAN MODE ACTIVE]"),
+						(c) =>
+							c.type === "text" &&
+							(c as TextContent).text?.includes("[PLAN MODE ACTIVE]"),
 					);
 				}
 				return true;
@@ -223,7 +241,11 @@ After completing a step, include a [DONE:n] tag in your response.`,
 			if (todoItems.every((t) => t.completed)) {
 				const completedList = todoItems.map((t) => `~~${t.text}~~`).join("\n");
 				pi.sendMessage(
-					{ customType: "plan-complete", content: `**Plan Complete!** ✓\n\n${completedList}`, display: true },
+					{
+						customType: "plan-complete",
+						content: `**Plan Complete!** ✓\n\n${completedList}`,
+						display: true,
+					},
 					{ triggerTurn: false },
 				);
 				executionMode = false;
@@ -238,7 +260,9 @@ After completing a step, include a [DONE:n] tag in your response.`,
 		if (!planModeEnabled || !ctx.hasUI) return;
 
 		// Extract todos from last assistant message
-		const lastAssistant = [...event.messages].reverse().find(isAssistantMessage);
+		const lastAssistant = [...event.messages]
+			.reverse()
+			.find(isAssistantMessage);
 		if (lastAssistant) {
 			const extracted = extractTodoItems(getTextContent(lastAssistant));
 			if (extracted.length > 0) {
@@ -248,7 +272,9 @@ After completing a step, include a [DONE:n] tag in your response.`,
 
 		// Show plan steps and prompt for next action
 		if (todoItems.length > 0) {
-			const todoListText = todoItems.map((t, i) => `${i + 1}. ☐ ${t.text}`).join("\n");
+			const todoListText = todoItems
+				.map((t, i) => `${i + 1}. ☐ ${t.text}`)
+				.join("\n");
 			pi.sendMessage(
 				{
 					customType: "plan-todo-list",
@@ -260,7 +286,9 @@ After completing a step, include a [DONE:n] tag in your response.`,
 		}
 
 		const choice = await ctx.ui.select("Plan mode - what next?", [
-			todoItems.length > 0 ? "Execute the plan (track progress)" : "Execute the plan",
+			todoItems.length > 0
+				? "Execute the plan (track progress)"
+				: "Execute the plan",
 			"Stay in plan mode",
 			"Refine the plan",
 		]);
@@ -276,7 +304,11 @@ After completing a step, include a [DONE:n] tag in your response.`,
 					? `Execute the plan. Start with: ${todoItems[0].text}`
 					: "Execute the plan you just created.";
 			pi.sendMessage(
-				{ customType: "plan-mode-execute", content: execMessage, display: true },
+				{
+					customType: "plan-mode-execute",
+					content: execMessage,
+					display: true,
+				},
 				{ triggerTurn: true },
 			);
 		} else if (choice === "Refine the plan") {
@@ -297,8 +329,13 @@ After completing a step, include a [DONE:n] tag in your response.`,
 
 		// Restore persisted state
 		const planModeEntry = entries
-			.filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "plan-mode")
-			.pop() as { data?: { enabled: boolean; todos?: TodoItem[]; executing?: boolean } } | undefined;
+			.filter(
+				(e: { type: string; customType?: string }) =>
+					e.type === "custom" && e.customType === "plan-mode",
+			)
+			.pop() as
+			| { data?: { enabled: boolean; todos?: TodoItem[]; executing?: boolean } }
+			| undefined;
 
 		if (planModeEntry?.data) {
 			planModeEnabled = planModeEntry.data.enabled ?? planModeEnabled;
@@ -324,7 +361,11 @@ After completing a step, include a [DONE:n] tag in your response.`,
 			const messages: AssistantMessage[] = [];
 			for (let i = executeIndex + 1; i < entries.length; i++) {
 				const entry = entries[i];
-				if (entry.type === "message" && "message" in entry && isAssistantMessage(entry.message as AgentMessage)) {
+				if (
+					entry.type === "message" &&
+					"message" in entry &&
+					isAssistantMessage(entry.message as AgentMessage)
+				) {
 					messages.push(entry.message as AssistantMessage);
 				}
 			}

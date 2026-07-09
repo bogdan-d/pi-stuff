@@ -1,66 +1,66 @@
 {
-  "name": "pi-stuff",
-  "version": "0.1.0",
-  "description": "Personal Pi coding agent extensions.",
-  "type": "module",
-  "private": true,
-  "license": "MIT",
-  "author": "Bogdan",
-  "keywords": [
-    "pi-package",
-    "pi",
-    "pi-coding-agent",
-    "pi-extension",
-    "extensions"
-  ],
-  "engines": {
-    "node": ">=20.6.0"
-  },
-  "packageManager": "bun@1.3.14",
-  "scripts": {
-    "check": "bun run lint && bun run typecheck",
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check .",
-    "format": "biome check --write ."
-  },
-  "pi": {
-    "extensions": [
-      "./extensions/*.ts",
-      "./extensions/*/index.ts"
-    ],
-    "prompts": [
-      "./prompts"
-    ],
-    "themes": [
-      "./themes"
-    ]
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-agent-core": "*",
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*",
-    "typebox": "*"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.4.16",
-    "@earendil-works/pi-agent-core": "0.80.1",
-    "@earendil-works/pi-ai": "0.80.1",
-    "@earendil-works/pi-coding-agent": "0.80.1",
-    "@earendil-works/pi-tui": "0.80.1",
-    "@types/node": "^24.10.0",
-    "typescript": "^5.9.3"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/bogdan-d/pi-stuff.git"
-  },
-  "homepage": "https://github.com/bogdan-d/pi-stuff#readme",
-  "bugs": {
-    "url": "https://github.com/bogdan-d/pi-stuff/issues"
-  },
-  "trustedDependencies": [
-    "@google/genai",
-    "protobufjs"
-  ]
+	"name": "pi-stuff",
+	"version": "0.1.0",
+	"description": "Personal Pi coding agent extensions.",
+	"type": "module",
+	"private": true,
+	"license": "MIT",
+	"author": "Bogdan",
+	"keywords": [
+		"pi-package",
+		"pi",
+		"pi-coding-agent",
+		"pi-extension",
+		"extensions"
+	],
+	"engines": {
+		"node": ">=20.6.0"
+	},
+	"packageManager": "bun@1.3.14",
+	"scripts": {
+		"check": "bun run lint && bun run typecheck",
+		"typecheck": "tsc --noEmit",
+		"lint": "biome check .",
+		"format": "biome check --write ."
+	},
+	"pi": {
+		"extensions": [
+			"./extensions/*.ts",
+			"./extensions/*/index.ts"
+		],
+		"prompts": [
+			"./prompts"
+		],
+		"themes": [
+			"./themes"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-agent-core": "*",
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*",
+		"typebox": "*"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.16",
+		"@earendil-works/pi-agent-core": "0.80.1",
+		"@earendil-works/pi-ai": "0.80.1",
+		"@earendil-works/pi-coding-agent": "0.80.1",
+		"@earendil-works/pi-tui": "0.80.1",
+		"@types/node": "^24.10.0",
+		"typescript": "^5.9.3"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bogdan-d/pi-stuff.git"
+	},
+	"homepage": "https://github.com/bogdan-d/pi-stuff#readme",
+	"bugs": {
+		"url": "https://github.com/bogdan-d/pi-stuff/issues"
+	},
+	"trustedDependencies": [
+		"@google/genai",
+		"protobufjs"
+	]
 }

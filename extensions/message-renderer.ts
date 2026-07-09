@@ -12,27 +12,33 @@ import { Box, Text } from "@earendil-works/pi-tui";
 
 export default function (pi: ExtensionAPI) {
 	// Register custom renderer for "status-update" messages
-	pi.registerMessageRenderer("status-update", (message, { expanded }, theme) => {
-		const details = message.details as { level: string; timestamp: number } | undefined;
-		const level = details?.level ?? "info";
+	pi.registerMessageRenderer(
+		"status-update",
+		(message, { expanded }, theme) => {
+			const details = message.details as
+				| { level: string; timestamp: number }
+				| undefined;
+			const level = details?.level ?? "info";
 
-		// Color based on level
-		const color = level === "error" ? "error" : level === "warn" ? "warning" : "success";
-		const prefix = theme.fg(color, `[${level.toUpperCase()}]`);
+			// Color based on level
+			const color =
+				level === "error" ? "error" : level === "warn" ? "warning" : "success";
+			const prefix = theme.fg(color, `[${level.toUpperCase()}]`);
 
-		let text = `${prefix} ${message.content}`;
+			let text = `${prefix} ${message.content}`;
 
-		// Show timestamp when expanded
-		if (expanded && details?.timestamp) {
-			const time = new Date(details.timestamp).toLocaleTimeString();
-			text += `\n${theme.fg("dim", `  at ${time}`)}`;
-		}
+			// Show timestamp when expanded
+			if (expanded && details?.timestamp) {
+				const time = new Date(details.timestamp).toLocaleTimeString();
+				text += `\n${theme.fg("dim", `  at ${time}`)}`;
+			}
 
-		// Use Box with customMessageBg for consistent styling
-		const box = new Box(1, 1, (t) => theme.bg("customMessageBg", t));
-		box.addChild(new Text(text, 0, 0));
-		return box;
-	});
+			// Use Box with customMessageBg for consistent styling
+			const box = new Box(1, 1, (t) => theme.bg("customMessageBg", t));
+			box.addChild(new Text(text, 0, 0));
+			return box;
+		},
+	);
 
 	// Command to send status messages
 	pi.registerCommand("status", {

@@ -43,13 +43,22 @@ export default function (pi: ExtensionAPI) {
 
 							// Get git branch (not otherwise accessible)
 							const branch = footerData.getGitBranch();
-							const fmt = (n: number) => (n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`);
+							const fmt = (n: number) =>
+								n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`;
 
-							const left = theme.fg("dim", `↑${fmt(input)} ↓${fmt(output)} $${cost.toFixed(3)}`);
+							const left = theme.fg(
+								"dim",
+								`↑${fmt(input)} ↓${fmt(output)} $${cost.toFixed(3)}`,
+							);
 							const branchStr = branch ? ` (${branch})` : "";
-							const right = theme.fg("dim", `${ctx.model?.id || "no-model"}${branchStr}`);
+							const right = theme.fg(
+								"dim",
+								`${ctx.model?.id || "no-model"}${branchStr}`,
+							);
 
-							const pad = " ".repeat(Math.max(1, width - visibleWidth(left) - visibleWidth(right)));
+							const pad = " ".repeat(
+								Math.max(1, width - visibleWidth(left) - visibleWidth(right)),
+							);
 							return [truncateToWidth(left + pad + right, width)];
 						},
 					};

@@ -9,7 +9,10 @@
  */
 
 import path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
 const BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -38,7 +41,9 @@ export default function (pi: ExtensionAPI) {
 			const frame = BRAILLE_FRAMES[frameIndex % BRAILLE_FRAMES.length];
 			const cwd = path.basename(process.cwd());
 			const session = pi.getSessionName();
-			const title = session ? `${frame} π - ${session} - ${cwd}` : `${frame} π - ${cwd}`;
+			const title = session
+				? `${frame} π - ${session} - ${cwd}`
+				: `${frame} π - ${cwd}`;
 			ctx.ui.setTitle(title);
 			frameIndex++;
 		}, 80);

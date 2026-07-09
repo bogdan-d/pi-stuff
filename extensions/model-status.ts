@@ -15,7 +15,9 @@ export default function (pi: ExtensionAPI) {
 
 		// Format model identifiers
 		const next = `${model.provider}/${model.id}`;
-		const prev = previousModel ? `${previousModel.provider}/${previousModel.id}` : "none";
+		const prev = previousModel
+			? `${previousModel.provider}/${previousModel.id}`
+			: "none";
 
 		// Show notification on change
 		if (source !== "restore") {

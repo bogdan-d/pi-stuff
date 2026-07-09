@@ -28,12 +28,16 @@ const structuredOutputTool = defineTool({
 	parameters: Type.Object({
 		headline: Type.String({ description: "Short title for the result" }),
 		summary: Type.String({ description: "One-paragraph summary" }),
-		actionItems: Type.Array(Type.String(), { description: "Concrete next steps or key bullets" }),
+		actionItems: Type.Array(Type.String(), {
+			description: "Concrete next steps or key bullets",
+		}),
 	}),
 
 	async execute(_toolCallId, params) {
 		return {
-			content: [{ type: "text", text: `Saved structured output: ${params.headline}` }],
+			content: [
+				{ type: "text", text: `Saved structured output: ${params.headline}` },
+			],
 			details: {
 				headline: params.headline,
 				summary: params.summary,
@@ -54,7 +58,9 @@ const structuredOutputTool = defineTool({
 			theme.fg("toolTitle", theme.bold(details.headline)),
 			theme.fg("text", details.summary),
 			"",
-			...details.actionItems.map((item, index) => theme.fg("muted", `${index + 1}. ${item}`)),
+			...details.actionItems.map((item, index) =>
+				theme.fg("muted", `${index + 1}. ${item}`),
+			),
 		];
 		return new Text(lines.join("\n"), 0, 0);
 	},

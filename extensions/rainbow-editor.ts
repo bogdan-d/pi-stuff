@@ -4,7 +4,10 @@
  * Usage: pi --extension ./examples/extensions/rainbow-editor.ts
  */
 
-import { CustomEditor, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+	CustomEditor,
+	type ExtensionAPI,
+} from "@earendil-works/pi-coding-agent";
 
 // Base colors (coral → yellow → green → teal → blue → purple → pink)
 const COLORS: [number, number, number][] = [
@@ -77,12 +80,18 @@ class RainbowEditor extends CustomEditor {
 		// Cycle: 10 shine positions + 10 pause frames
 		const cycle = this.frame % 20;
 		const shinePos = cycle < 10 ? cycle : -1; // -1 means no shine (pause)
-		return super.render(width).map((line) => line.replace(/ultrathink/gi, (m) => colorize(m, shinePos)));
+		return super
+			.render(width)
+			.map((line) =>
+				line.replace(/ultrathink/gi, (m) => colorize(m, shinePos)),
+			);
 	}
 }
 
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
-		ctx.ui.setEditorComponent((tui, theme, kb) => new RainbowEditor(tui, theme, kb));
+		ctx.ui.setEditorComponent(
+			(tui, theme, kb) => new RainbowEditor(tui, theme, kb),
+		);
 	});
 }

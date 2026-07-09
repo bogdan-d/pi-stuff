@@ -32,8 +32,14 @@ import { Type } from "typebox";
 
 const RgParams = Type.Object({
 	pattern: Type.String({ description: "Search pattern (regex)" }),
-	path: Type.Optional(Type.String({ description: "Directory to search (default: current directory)" })),
-	glob: Type.Optional(Type.String({ description: "File glob pattern, e.g. '*.ts'" })),
+	path: Type.Optional(
+		Type.String({
+			description: "Directory to search (default: current directory)",
+		}),
+	),
+	glob: Type.Optional(
+		Type.String({ description: "File glob pattern, e.g. '*.ts'" }),
+	),
 });
 
 interface RgDetails {
@@ -74,7 +80,12 @@ export default function (pi: ExtensionAPI) {
 				if (err.status === 1) {
 					return {
 						content: [{ type: "text", text: "No matches found" }],
-						details: { pattern, path: searchPath, glob, matchCount: 0 } as RgDetails,
+						details: {
+							pattern,
+							path: searchPath,
+							glob,
+							matchCount: 0,
+						} as RgDetails,
 					};
 				}
 				throw new Error(`ripgrep failed: ${err.message}`);
@@ -83,7 +94,12 @@ export default function (pi: ExtensionAPI) {
 			if (!output.trim()) {
 				return {
 					content: [{ type: "text", text: "No matches found" }],
-					details: { pattern, path: searchPath, glob, matchCount: 0 } as RgDetails,
+					details: {
+						pattern,
+						path: searchPath,
+						glob,
+						matchCount: 0,
+					} as RgDetails,
 				};
 			}
 
@@ -96,7 +112,9 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			// Count matches (each non-empty line with a match)
-			const matchCount = output.split("\n").filter((line) => line.trim()).length;
+			const matchCount = output
+				.split("\n")
+				.filter((line) => line.trim()).length;
 
 			const details: RgDetails = {
 				pattern,

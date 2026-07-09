@@ -25,7 +25,10 @@ export default function (pi: ExtensionAPI) {
 
 		// Don't process if it's a whole-line bash command (starts with !)
 		// This preserves the existing !command behavior
-		if (text.trimStart().startsWith("!") && !text.trimStart().startsWith("!{")) {
+		if (
+			text.trimStart().startsWith("!") &&
+			!text.trimStart().startsWith("!{")
+		) {
 			return { action: "continue" };
 		}
 
@@ -38,7 +41,11 @@ export default function (pi: ExtensionAPI) {
 		PATTERN.lastIndex = 0;
 
 		let result = text;
-		const expansions: Array<{ command: string; output: string; error?: string }> = [];
+		const expansions: Array<{
+			command: string;
+			output: string;
+			error?: string;
+		}> = [];
 
 		// Find all matches first (to avoid issues with replacing while iterating)
 		const matches: Array<{ full: string; command: string }> = [];
@@ -81,12 +88,16 @@ export default function (pi: ExtensionAPI) {
 			const summary = expansions
 				.map((e) => {
 					const status = e.error ? ` (${e.error})` : "";
-					const preview = e.output.length > 50 ? `${e.output.slice(0, 50)}...` : e.output;
+					const preview =
+						e.output.length > 50 ? `${e.output.slice(0, 50)}...` : e.output;
 					return `!{${e.command}}${status} -> "${preview}"`;
 				})
 				.join("\n");
 
-			ctx.ui.notify(`Expanded ${expansions.length} inline command(s):\n${summary}`, "info");
+			ctx.ui.notify(
+				`Expanded ${expansions.length} inline command(s):\n${summary}`,
+				"info",
+			);
 		}
 
 		return { action: "transform", text: result, images: event.images };

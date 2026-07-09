@@ -16,7 +16,11 @@
  *   /working-indicator reset     Restore pi's default spinner
  */
 
-import type { ExtensionAPI, ExtensionContext, WorkingIndicatorOptions } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	WorkingIndicatorOptions,
+} from "@earendil-works/pi-coding-agent";
 
 type WorkingIndicatorMode = "dot" | "none" | "pulse" | "spinner" | "default";
 
@@ -38,7 +42,9 @@ function colorize(text: string, color: string): string {
 	return `${color}${text}${RESET_FG}`;
 }
 
-function getIndicator(mode: WorkingIndicatorMode): WorkingIndicatorOptions | undefined {
+function getIndicator(
+	mode: WorkingIndicatorMode,
+): WorkingIndicatorOptions | undefined {
 	switch (mode) {
 		case "dot":
 			return {
@@ -88,7 +94,10 @@ export default function (pi: ExtensionAPI) {
 
 	const applyIndicator = (ctx: ExtensionContext) => {
 		ctx.ui.setWorkingIndicator(getIndicator(mode));
-		ctx.ui.setStatus("working-indicator", ctx.ui.theme.fg("dim", `Indicator: ${describeMode(mode)}`));
+		ctx.ui.setStatus(
+			"working-indicator",
+			ctx.ui.theme.fg("dim", `Indicator: ${describeMode(mode)}`),
+		);
 	};
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -96,7 +105,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("working-indicator", {
-		description: "Set the streaming working indicator: dot, pulse, none, spinner, or reset.",
+		description:
+			"Set the streaming working indicator: dot, pulse, none, spinner, or reset.",
 		handler: async (args, ctx) => {
 			const nextMode = args.trim().toLowerCase();
 			if (!nextMode) {
@@ -111,7 +121,10 @@ export default function (pi: ExtensionAPI) {
 				nextMode !== "spinner" &&
 				nextMode !== "reset"
 			) {
-				ctx.ui.notify("Usage: /working-indicator [dot|pulse|none|spinner|reset]", "error");
+				ctx.ui.notify(
+					"Usage: /working-indicator [dot|pulse|none|spinner|reset]",
+					"error",
+				);
 				return;
 			}
 
