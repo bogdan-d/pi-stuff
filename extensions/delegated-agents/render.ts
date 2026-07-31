@@ -1,11 +1,11 @@
 import { getMarkdownTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { getFinalOutput, getToolCalls } from "./messages.js";
-import { PROFILES } from "./profiles.js";
+import { ROLES } from "./roles.js";
 import type {
 	ChildRunDetails,
-	DelegateRunDetails,
-	ProfileName,
+	RenderableRunDetails,
+	RoleName,
 } from "./types.js";
 
 function formatTokens(count: number): string {
@@ -15,7 +15,7 @@ function formatTokens(count: number): string {
 	return `${(count / 1_000_000).toFixed(1)}M`;
 }
 
-function formatUsage(details: DelegateRunDetails): string {
+function formatUsage(details: RenderableRunDetails): string {
 	const { usage } = details;
 	const parts = [
 		usage.input ? `↑${formatTokens(usage.input)}` : "",
@@ -38,16 +38,15 @@ function formatToolCall(name: string, args: Record<string, unknown>): string {
 }
 
 export function renderDelegateCall(
-	args: { profile?: ProfileName; task?: string },
+	args: { agent?: string; profile?: string; task?: string },
 	theme: Theme,
 ) {
 	const task = args.task ?? "";
 	const preview = task.length > 90 ? `${task.slice(0, 90)}...` : task;
-	const profile = args.profile
-		? ` ${theme.fg("accent", `[${args.profile}]`)}`
-		: "";
+	const agent = args.agent ?? args.profile;
+	const selected = agent ? ` ${theme.fg("accent", `[${agent}]`)}` : "";
 	return new Text(
-		`${theme.fg("toolTitle", theme.bold("delegate_agent"))}${profile}\n  ${theme.fg("dim", preview)}`,
+		`${theme.fg("toolTitle", theme.bold("delegate_agent"))}${selected}\n  ${theme.fg("dim", preview)}`,
 		0,
 		0,
 	);
@@ -56,28 +55,32 @@ export function renderDelegateCall(
 export function renderDelegateResult(
 	result: {
 		content: Array<{ type: string; text?: string }>;
-		details: DelegateRunDetails;
+		details: RenderableRunDetails;
 	},
 	options: { expanded: boolean; isPartial: boolean },
 	theme: Theme,
 	task: string,
 ) {
 	const details = result.details;
-	const profile = PROFILES[details.profile];
+	const agent = "agent" in details ? details.agent : details.profile;
+	const role: RoleName = "role" in details ? details.role : details.profile;
+	const roleSpec = ROLES[role];
 	const richDetails: ChildRunDetails | undefined =
-		"messages" in details ? details : undefined;
+		"messages" in details && "agent" in details ? details : undefined;
+	const legacyMessages =
+		"messages" in details && details.messages ? details.messages : undefined;
 	const contentText = result.content.find((part) => part.type === "text")?.text;
 	const output =
-		(richDetails ? getFinalOutput(richDetails.messages) : contentText) ||
+		(legacyMessages ? getFinalOutput(legacyMessages) : contentText) ||
 		"(no output)";
-	const toolCalls = richDetails ? getToolCalls(richDetails.messages) : [];
+	const toolCalls = legacyMessages ? getToolCalls(legacyMessages) : [];
 	const status = options.isPartial
 		? theme.fg("warning", "… Running")
 		: theme.fg("success", "✓ Done");
 	const model = details.thinking
 		? `${details.model}:${details.thinking}`
 		: details.model;
-	const header = `${status} ${theme.fg("accent", profile.label)} ${theme.fg("dim", model)}`;
+	const header = `${status} ${theme.fg("accent", agent)} · ${roleSpec.label} ${theme.fg("dim", model)}`;
 	const usage = formatUsage(details);
 
 	if (!options.expanded) {
@@ -100,7 +103,14 @@ export function renderDelegateResult(
 	const container = new Container();
 	container.addChild(new Text(header, 0, 0));
 	container.addChild(
-		new Text(theme.fg("dim", `${profile.description} · ${details.cwd}`), 0, 0),
+		new Text(
+			theme.fg(
+				"dim",
+				`${"description" in details && details.description ? details.description : roleSpec.description} · ${details.cwd}`,
+			),
+			0,
+			0,
+		),
 	);
 	container.addChild(new Spacer(1));
 	container.addChild(new Text(theme.fg("muted", "Task"), 0, 0));

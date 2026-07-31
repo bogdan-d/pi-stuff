@@ -10,7 +10,8 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getPackageDir, RpcClient } from "@earendil-works/pi-coding-agent";
 import { getFinalOutput, getToolCalls } from "./messages.js";
-import type { ChildRunDetails, ProfileName, ProfileSpec } from "./types.js";
+import { ROLES } from "./roles.js";
+import type { AgentSpec, ChildRunDetails } from "./types.js";
 
 export const CHILD_ENV = "PI_DELEGATED_AGENT_CHILD";
 const RUN_TIMEOUT_MS = 30 * 60 * 1_000;
@@ -59,9 +60,28 @@ export function isSubagentFailure(details: ChildRunDetails): boolean {
 	return details.stopReason === "error" || details.stopReason === "aborted";
 }
 
+export function buildChildArgs(
+	spec: AgentSpec,
+	thinking?: ModelThinkingLevel,
+): string[] {
+	const args = [
+		"--no-session",
+		"--no-skills",
+		"--append-system-prompt",
+		spec.rolePromptPath,
+	];
+	if (spec.specializationPrompt) {
+		args.push(
+			"--append-system-prompt",
+			`Custom delegated-agent specialization:\n${spec.specializationPrompt}`,
+		);
+	}
+	if (thinking) args.push("--thinking", thinking);
+	return args;
+}
+
 export async function runDelegatedAgent(options: {
-	profile: ProfileName;
-	spec: ProfileSpec;
+	spec: AgentSpec;
 	task: string;
 	cwd: string;
 	model?: string;
@@ -70,7 +90,9 @@ export async function runDelegatedAgent(options: {
 	onUpdate?: AgentToolUpdateCallback<ChildRunDetails>;
 }): Promise<ChildRunDetails> {
 	const details: ChildRunDetails = {
-		profile: options.profile,
+		agent: options.spec.name,
+		role: options.spec.role,
+		description: options.spec.description,
 		task: options.task,
 		cwd: options.cwd,
 		model: options.model ?? "default model",
@@ -79,13 +101,7 @@ export async function runDelegatedAgent(options: {
 		stderr: "",
 		usage: emptyUsage(),
 	};
-	const args = [
-		"--no-session",
-		"--no-skills",
-		"--append-system-prompt",
-		options.spec.promptPath,
-	];
-	if (options.thinking) args.push("--thinking", options.thinking);
+	const args = buildChildArgs(options.spec, options.thinking);
 
 	const client = new RpcClient({
 		cliPath: join(getPackageDir(), "dist", "cli.js"),
@@ -95,9 +111,10 @@ export async function runDelegatedAgent(options: {
 		args,
 	});
 	const prompt = [
-		`Run as the ${options.spec.label} delegated agent inside an isolated no-session subprocess.`,
+		`Run as the ${ROLES[options.spec.role].label} delegated agent inside an isolated no-session subprocess.`,
 		"You receive no parent conversation. Treat this standalone task as the complete brief.",
-		`Profile: ${options.profile}`,
+		`Agent: ${options.spec.name}`,
+		`Role: ${options.spec.role}`,
 		`Task: ${options.task}`,
 	].join("\n\n");
 	const handleEvent: RpcEventListener = (event) => {

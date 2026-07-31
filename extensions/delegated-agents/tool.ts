@@ -11,23 +11,15 @@ import {
 	truncateHead,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { formatAgentCatalog, getAgentNames } from "./agents.js";
 import { getFinalOutput } from "./messages.js";
-import { PROFILE_NAMES, PROFILES } from "./profiles.js";
 import { renderDelegateCall, renderDelegateResult } from "./render.js";
 import { isSubagentFailure, runDelegatedAgent } from "./runner.js";
-import type { DelegateRunDetails, PersistedRunDetails } from "./types.js";
-
-const DelegateParams = Type.Object({
-	profile: StringEnum(PROFILE_NAMES, {
-		description: "planning | implementation | verification | review",
-	}),
-	task: Type.String({
-		description: "Standalone task brief for the delegated agent.",
-	}),
-	cwd: Type.Optional(
-		Type.String({ description: "Working directory. Defaults to current cwd." }),
-	),
-});
+import type {
+	AgentCatalog,
+	DelegateRunDetails,
+	PersistedRunDetails,
+} from "./types.js";
 
 async function prepareOutput(output: string): Promise<{
 	text: string;
@@ -51,17 +43,33 @@ async function prepareOutput(output: string): Promise<{
 	};
 }
 
-const delegateAgentTool = defineTool<typeof DelegateParams, DelegateRunDetails>(
-	{
+export function createDelegateAgentTool(catalog: AgentCatalog) {
+	const names = getAgentNames(catalog);
+	const catalogText = formatAgentCatalog(catalog);
+	const DelegateParams = Type.Object({
+		agent: StringEnum(names, {
+			description: "Built-in or configured delegated agent name.",
+		}),
+		task: Type.String({
+			description: "Standalone task brief for the delegated agent.",
+		}),
+		cwd: Type.Optional(
+			Type.String({
+				description: "Working directory. Defaults to current cwd.",
+			}),
+		),
+	});
+
+	return defineTool<typeof DelegateParams, DelegateRunDetails>({
 		name: "delegate_agent",
 		label: "Delegate Agent",
-		description:
-			"Delegate a standalone planning, implementation, verification/debugging, or review task to an isolated Pi agent using its model-selected active tools.",
+		description: `Delegate a standalone task to an isolated built-in or configured Pi agent using its model-selected active tools.\n\nAvailable agents:\n${catalogText}`,
 		promptSnippet:
 			"Delegate isolated planning, implementation, verification, or review work",
 		promptGuidelines: [
 			"delegate_agent: No inherited context; include background, exact objective, scope, constraints, cwd, and expected output.",
-			"delegate_agent: Profiles share the child runtime's active tools; role restrictions are behavioral instructions, not tool-level enforcement.",
+			"delegate_agent: Select agent by name from the catalog in its tool description.",
+			"delegate_agent: Agents share the child runtime's active tools; role restrictions are behavioral instructions, not tool-level enforcement.",
 			"delegate_agent: Use planning for concrete implementation plans, not broad discovery.",
 			"delegate_agent: Use implementation for a scoped autonomous code change and focused validation.",
 			"delegate_agent: Use verification for reproducing failures, running checks, and root-cause diagnosis without source edits.",
@@ -72,29 +80,34 @@ const delegateAgentTool = defineTool<typeof DelegateParams, DelegateRunDetails>(
 		executionMode: "sequential",
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
-			const spec = PROFILES[params.profile];
+			const spec = catalog.get(params.agent);
+			if (!spec) throw new Error(`Unknown delegated agent: ${params.agent}`);
+			const parentModel = ctx.model
+				? `${ctx.model.provider}/${ctx.model.id}`
+				: undefined;
+			const model = spec.model ?? parentModel;
+			const thinking = spec.thinking ?? ctx.thinkingLevel;
 			const details = await runDelegatedAgent({
-				profile: params.profile,
 				spec,
 				task: params.task,
 				cwd: params.cwd ?? ctx.cwd,
-				...(ctx.model
-					? { model: `${ctx.model.provider}/${ctx.model.id}` }
-					: {}),
-				...(ctx.thinkingLevel ? { thinking: ctx.thinkingLevel } : {}),
+				...(model ? { model } : {}),
+				...(thinking ? { thinking } : {}),
 				...(signal ? { signal } : {}),
 				...(onUpdate ? { onUpdate } : {}),
 			});
 			const finalOutput = getFinalOutput(details.messages) || "(no output)";
 			if (isSubagentFailure(details)) {
 				throw new Error(
-					`Delegated ${params.profile} agent failed: ${details.errorMessage || details.stderr || finalOutput}`,
+					`Delegated agent ${params.agent} failed: ${details.errorMessage || details.stderr || finalOutput}`,
 				);
 			}
 
 			const output = await prepareOutput(finalOutput);
 			const persistedDetails: PersistedRunDetails = {
-				profile: details.profile,
+				agent: details.agent,
+				role: details.role,
+				...(details.description ? { description: details.description } : {}),
 				cwd: details.cwd,
 				model: details.model,
 				...(details.thinking ? { thinking: details.thinking } : {}),
@@ -117,9 +130,12 @@ const delegateAgentTool = defineTool<typeof DelegateParams, DelegateRunDetails>(
 		renderResult(result, options, theme, context) {
 			return renderDelegateResult(result, options, theme, context.args.task);
 		},
-	},
-);
+	});
+}
 
-export function registerDelegateAgentTool(pi: ExtensionAPI): void {
-	pi.registerTool(delegateAgentTool);
+export function registerDelegateAgentTool(
+	pi: ExtensionAPI,
+	catalog: AgentCatalog,
+): void {
+	pi.registerTool(createDelegateAgentTool(catalog));
 }

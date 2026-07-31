@@ -4,20 +4,43 @@ import type {
 	Usage,
 } from "@earendil-works/pi-ai";
 
-export type ProfileName =
+export type RoleName =
 	| "planning"
 	| "implementation"
 	| "verification"
 	| "review";
 
-export interface ProfileSpec {
+export interface RoleSpec {
 	label: string;
 	description: string;
 	promptPath: string;
 }
 
+export interface CustomAgentConfig {
+	role: RoleName;
+	description: string;
+	prompt: string;
+	model?: string;
+	thinking?: ModelThinkingLevel;
+}
+
+export interface AgentSpec {
+	name: string;
+	role: RoleName;
+	description: string;
+	rolePromptPath: string;
+	specializationPrompt?: string;
+	model?: string;
+	thinking?: ModelThinkingLevel;
+	source: "builtin" | "config";
+}
+
+export type AgentCatalog = ReadonlyMap<string, AgentSpec>;
+
 export interface ChildRunDetails {
-	profile: ProfileName;
+	agent: string;
+	role: RoleName;
+	description?: string;
 	task: string;
 	cwd: string;
 	model: string;
@@ -30,7 +53,9 @@ export interface ChildRunDetails {
 }
 
 export interface PersistedRunDetails {
-	profile: ProfileName;
+	agent: string;
+	role: RoleName;
+	description?: string;
 	cwd: string;
 	model: string;
 	thinking?: ModelThinkingLevel;
@@ -40,3 +65,15 @@ export interface PersistedRunDetails {
 }
 
 export type DelegateRunDetails = ChildRunDetails | PersistedRunDetails;
+
+export interface LegacyRunDetails {
+	profile: RoleName;
+	cwd: string;
+	model: string;
+	thinking?: ModelThinkingLevel;
+	usage: Usage;
+	messages?: AssistantMessage[];
+	stderr?: string;
+}
+
+export type RenderableRunDetails = DelegateRunDetails | LegacyRunDetails;

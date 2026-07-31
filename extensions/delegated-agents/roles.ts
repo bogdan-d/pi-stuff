@@ -1,19 +1,19 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ProfileName, ProfileSpec } from "./types.js";
+import type { RoleName, RoleSpec } from "./types.js";
 
 const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const promptPath = (name: ProfileName) =>
+const promptPath = (name: RoleName) =>
 	path.join(ROOT_DIR, "prompts", `${name}.md`);
 
-export const PROFILE_NAMES = [
+export const ROLE_NAMES = [
 	"planning",
 	"implementation",
 	"verification",
 	"review",
-] as const satisfies readonly ProfileName[];
+] as const satisfies readonly RoleName[];
 
-export const PROFILES: Record<ProfileName, ProfileSpec> = {
+export const ROLES: Record<RoleName, RoleSpec> = {
 	planning: {
 		label: "Planning",
 		description:
