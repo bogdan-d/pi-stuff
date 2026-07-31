@@ -14,7 +14,6 @@ export interface ProfileSpec {
 	label: string;
 	description: string;
 	promptPath: string;
-	tools: readonly string[];
 }
 
 export interface ChildRunDetails {

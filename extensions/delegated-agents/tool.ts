@@ -56,11 +56,12 @@ const delegateAgentTool = defineTool<typeof DelegateParams, DelegateRunDetails>(
 		name: "delegate_agent",
 		label: "Delegate Agent",
 		description:
-			"Delegate a standalone planning, implementation, verification/debugging, or review task to an isolated Pi agent.",
+			"Delegate a standalone planning, implementation, verification/debugging, or review task to an isolated Pi agent using its model-selected active tools.",
 		promptSnippet:
 			"Delegate isolated planning, implementation, verification, or review work",
 		promptGuidelines: [
 			"delegate_agent: No inherited context; include background, exact objective, scope, constraints, cwd, and expected output.",
+			"delegate_agent: Profiles share the child runtime's active tools; role restrictions are behavioral instructions, not tool-level enforcement.",
 			"delegate_agent: Use planning for concrete implementation plans, not broad discovery.",
 			"delegate_agent: Use implementation for a scoped autonomous code change and focused validation.",
 			"delegate_agent: Use verification for reproducing failures, running checks, and root-cause diagnosis without source edits.",

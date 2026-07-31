@@ -82,9 +82,6 @@ export async function runDelegatedAgent(options: {
 	const args = [
 		"--no-session",
 		"--no-skills",
-		"--no-extensions",
-		"--tools",
-		options.spec.tools.join(","),
 		"--append-system-prompt",
 		options.spec.promptPath,
 	];
