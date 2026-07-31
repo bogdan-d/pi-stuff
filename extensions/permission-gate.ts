@@ -8,6 +8,7 @@
 import {
 	type ExtensionAPI,
 	isToolCallEventType,
+	type ToolCallEvent,
 } from "@earendil-works/pi-coding-agent";
 
 interface RiskRule {
@@ -88,19 +89,23 @@ function previewCommand(command: string): string {
 	return `${command.slice(0, MAX_COMMAND_PREVIEW)}\n... (${command.length - MAX_COMMAND_PREVIEW} more chars)`;
 }
 
-function getShellCommand(event: {
-	toolName: string;
-	input: unknown;
-}): string | undefined {
+function getShellCommand(event: ToolCallEvent): string | undefined {
 	if (isToolCallEventType("bash", event)) {
 		return event.input.command;
 	}
 
-	if (event.toolName !== "exec_command") return undefined;
-	if (!event.input || typeof event.input !== "object") return undefined;
+	if (
+		!isToolCallEventType<"exec_command", Record<string, unknown>>(
+			"exec_command",
+			event,
+		)
+	) {
+		return undefined;
+	}
 
-	const input = event.input as Record<string, unknown>;
-	return typeof input["cmd"] === "string" ? input["cmd"] : undefined;
+	return typeof event.input["cmd"] === "string"
+		? event.input["cmd"]
+		: undefined;
 }
 
 export default function (pi: ExtensionAPI) {

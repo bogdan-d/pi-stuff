@@ -63,24 +63,25 @@ function loadAgentsFromDir(
 		const { frontmatter, body } =
 			parseFrontmatter<Record<string, string>>(content);
 
-		if (!frontmatter.name || !frontmatter.description) {
+		if (!frontmatter["name"] || !frontmatter["description"]) {
 			continue;
 		}
 
-		const tools = frontmatter.tools
+		const tools = frontmatter["tools"]
 			?.split(",")
 			.map((t: string) => t.trim())
 			.filter(Boolean);
 
-		agents.push({
-			name: frontmatter.name,
-			description: frontmatter.description,
-			tools: tools && tools.length > 0 ? tools : undefined,
-			model: frontmatter.model,
+		const agent: AgentConfig = {
+			name: frontmatter["name"],
+			description: frontmatter["description"],
 			systemPrompt: body,
 			source,
 			filePath,
-		});
+		};
+		if (tools && tools.length > 0) agent.tools = tools;
+		if (frontmatter["model"] !== undefined) agent.model = frontmatter["model"];
+		agents.push(agent);
 	}
 
 	return agents;

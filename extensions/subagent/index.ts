@@ -22,6 +22,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import {
 	type ExtensionAPI,
 	getMarkdownTheme,
+	type ThemeColor,
 	withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
@@ -31,7 +32,7 @@ import {
 	type AgentScope,
 	discoverAgents,
 	seedBundledAgents,
-} from "./agents.ts";
+} from "./agents.js";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
@@ -75,8 +76,19 @@ function formatUsageStats(
 function formatToolCall(
 	toolName: string,
 	args: Record<string, unknown>,
-	themeFg: (color: any, text: string) => string,
+	themeFg: (color: ThemeColor, text: string) => string,
 ): string {
+	const getStringArgument = (keys: string[], fallback: string): string => {
+		for (const key of keys) {
+			const value = args[key];
+			if (typeof value === "string" && value) return value;
+		}
+		return fallback;
+	};
+	const getNumberArgument = (key: string): number | undefined => {
+		const value = args[key];
+		return typeof value === "number" ? value : undefined;
+	};
 	const shortenPath = (p: string) => {
 		const home = os.homedir();
 		return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
@@ -84,16 +96,16 @@ function formatToolCall(
 
 	switch (toolName) {
 		case "bash": {
-			const command = (args.command as string) || "...";
+			const command = getStringArgument(["command"], "...");
 			const preview =
 				command.length > 60 ? `${command.slice(0, 60)}...` : command;
 			return themeFg("muted", "$ ") + themeFg("toolOutput", preview);
 		}
 		case "read": {
-			const rawPath = (args.file_path || args.path || "...") as string;
+			const rawPath = getStringArgument(["file_path", "path"], "...");
 			const filePath = shortenPath(rawPath);
-			const offset = args.offset as number | undefined;
-			const limit = args.limit as number | undefined;
+			const offset = getNumberArgument("offset");
+			const limit = getNumberArgument("limit");
 			let text = themeFg("accent", filePath);
 			if (offset !== undefined || limit !== undefined) {
 				const startLine = offset ?? 1;
@@ -106,27 +118,27 @@ function formatToolCall(
 			return themeFg("muted", "read ") + text;
 		}
 		case "write": {
-			const rawPath = (args.file_path || args.path || "...") as string;
+			const rawPath = getStringArgument(["file_path", "path"], "...");
 			const filePath = shortenPath(rawPath);
-			const content = (args.content || "") as string;
+			const content = getStringArgument(["content"], "");
 			const lines = content.split("\n").length;
 			let text = themeFg("muted", "write ") + themeFg("accent", filePath);
 			if (lines > 1) text += themeFg("dim", ` (${lines} lines)`);
 			return text;
 		}
 		case "edit": {
-			const rawPath = (args.file_path || args.path || "...") as string;
+			const rawPath = getStringArgument(["file_path", "path"], "...");
 			return (
 				themeFg("muted", "edit ") + themeFg("accent", shortenPath(rawPath))
 			);
 		}
 		case "ls": {
-			const rawPath = (args.path || ".") as string;
+			const rawPath = getStringArgument(["path"], ".");
 			return themeFg("muted", "ls ") + themeFg("accent", shortenPath(rawPath));
 		}
 		case "find": {
-			const pattern = (args.pattern || "*") as string;
-			const rawPath = (args.path || ".") as string;
+			const pattern = getStringArgument(["pattern"], "*");
+			const rawPath = getStringArgument(["path"], ".");
 			return (
 				themeFg("muted", "find ") +
 				themeFg("accent", pattern) +
@@ -134,8 +146,8 @@ function formatToolCall(
 			);
 		}
 		case "grep": {
-			const pattern = (args.pattern || "") as string;
-			const rawPath = (args.path || ".") as string;
+			const pattern = getStringArgument(["pattern"], "");
+			const rawPath = getStringArgument(["path"], ".");
 			return (
 				themeFg("muted", "grep ") +
 				themeFg("accent", `/${pattern}/`) +
@@ -143,7 +155,7 @@ function formatToolCall(
 			);
 		}
 		default: {
-			const argsStr = JSON.stringify(args);
+			const argsStr = JSON.stringify(args) ?? "{}";
 			const preview =
 				argsStr.length > 50 ? `${argsStr.slice(0, 50)}...` : argsStr;
 			return themeFg("accent", toolName) + themeFg("dim", ` ${preview}`);
@@ -182,9 +194,22 @@ interface SubagentDetails {
 	results: SingleResult[];
 }
 
+function isMessage(value: unknown): value is Message {
+	if (typeof value !== "object" || value === null || !("role" in value)) {
+		return false;
+	}
+
+	return (
+		value.role === "user" ||
+		value.role === "assistant" ||
+		value.role === "toolResult"
+	);
+}
+
 function getFinalOutput(messages: Message[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
+		if (!msg) continue;
 		if (msg.role === "assistant") {
 			for (const part of msg.content) {
 				if (part.type === "text") return part.text;
@@ -227,7 +252,7 @@ function truncateParallelOutput(output: string): string {
 
 type DisplayItem =
 	| { type: "text"; text: string }
-	| { type: "toolCall"; name: string; args: Record<string, any> };
+	| { type: "toolCall"; name: string; args: Record<string, unknown> };
 
 function getDisplayItems(messages: Message[]): DisplayItem[] {
 	const items: DisplayItem[] = [];
@@ -255,12 +280,13 @@ async function mapWithConcurrencyLimit<TIn, TOut>(
 	if (items.length === 0) return [];
 	const limit = Math.max(1, Math.min(concurrency, items.length));
 	const results: TOut[] = new Array(items.length);
-	let nextIndex = 0;
+	const iterator = items.entries();
 	const workers = new Array(limit).fill(null).map(async () => {
 		while (true) {
-			const current = nextIndex++;
-			if (current >= items.length) return;
-			results[current] = await fn(items[current], current);
+			const next = iterator.next();
+			if (next.done) return;
+			const [current, item] = next.value;
+			results[current] = await fn(item, current);
 		}
 	});
 	await Promise.all(workers);
@@ -334,7 +360,7 @@ async function runSingleAgent(
 				contextTokens: 0,
 				turns: 0,
 			},
-			step,
+			...(step === undefined ? {} : { step }),
 		};
 	}
 
@@ -362,8 +388,8 @@ async function runSingleAgent(
 			contextTokens: 0,
 			turns: 0,
 		},
-		model: agent.model,
-		step,
+		...(agent.model === undefined ? {} : { model: agent.model }),
+		...(step === undefined ? {} : { step }),
 	};
 
 	const emitUpdate = () => {
@@ -402,15 +428,26 @@ async function runSingleAgent(
 
 			const processLine = (line: string) => {
 				if (!line.trim()) return;
-				let event: any;
+				let parsed: unknown;
 				try {
-					event = JSON.parse(line);
+					parsed = JSON.parse(line);
 				} catch {
 					return;
 				}
+				if (
+					typeof parsed !== "object" ||
+					parsed === null ||
+					!("type" in parsed)
+				) {
+					return;
+				}
 
-				if (event.type === "message_end" && event.message) {
-					const msg = event.message as Message;
+				const eventType = parsed.type;
+				if (typeof eventType !== "string") return;
+				const message = "message" in parsed ? parsed.message : undefined;
+
+				if (eventType === "message_end" && isMessage(message)) {
+					const msg = message;
 					currentResult.messages.push(msg);
 
 					if (msg.role === "assistant") {
@@ -432,8 +469,8 @@ async function runSingleAgent(
 					emitUpdate();
 				}
 
-				if (event.type === "tool_result_end" && event.message) {
-					currentResult.messages.push(event.message as Message);
+				if (eventType === "tool_result_end" && isMessage(message)) {
+					currentResult.messages.push(message);
 					emitUpdate();
 				}
 			};
@@ -654,8 +691,7 @@ export default function (pi: ExtensionAPI) {
 				const results: SingleResult[] = [];
 				let previousOutput = "";
 
-				for (let i = 0; i < params.chain.length; i++) {
-					const step = params.chain[i];
+				for (const [i, step] of params.chain.entries()) {
 					const taskWithContext = step.task.replace(
 						/\{previous\}/g,
 						previousOutput,
@@ -709,9 +745,7 @@ export default function (pi: ExtensionAPI) {
 					content: [
 						{
 							type: "text",
-							text:
-								getFinalOutput(results[results.length - 1].messages) ||
-								"(no output)",
+							text: previousOutput || "(no output)",
 						},
 					],
 					details: makeDetails("chain")(results),
@@ -734,11 +768,11 @@ export default function (pi: ExtensionAPI) {
 				const allResults: SingleResult[] = new Array(params.tasks.length);
 
 				// Initialize placeholder results
-				for (let i = 0; i < params.tasks.length; i++) {
+				for (const [i, task] of params.tasks.entries()) {
 					allResults[i] = {
-						agent: params.tasks[i].agent,
+						agent: task.agent,
 						agentSource: "unknown",
-						task: params.tasks[i].task,
+						task: task.task,
 						exitCode: -1, // -1 = still running
 						messages: [],
 						stderr: "",
@@ -873,8 +907,7 @@ export default function (pi: ExtensionAPI) {
 					theme.fg("toolTitle", theme.bold("subagent ")) +
 					theme.fg("accent", `chain (${args.chain.length} steps)`) +
 					theme.fg("muted", ` [${scope}]`);
-				for (let i = 0; i < Math.min(args.chain.length, 3); i++) {
-					const step = args.chain[i];
+				for (const [i, step] of args.chain.slice(0, 3).entries()) {
 					// Clean up {previous} placeholder for display
 					const cleanTask = step.task.replace(/\{previous\}/g, "").trim();
 					const preview =
@@ -956,6 +989,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (details.mode === "single" && details.results.length === 1) {
 				const r = details.results[0];
+				if (!r) return new Text("(no output)", 0, 0);
 				const isError = isFailedResult(r);
 				const icon = isError
 					? theme.fg("error", "✗")

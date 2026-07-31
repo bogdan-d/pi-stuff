@@ -51,7 +51,10 @@ export default function (pi: ExtensionAPI) {
 		const matches: Array<{ full: string; command: string }> = [];
 		let match = PATTERN.exec(text);
 		while (match) {
-			matches.push({ full: match[0], command: match[1] });
+			const command = match[1];
+			if (command !== undefined) {
+				matches.push({ full: match[0], command });
+			}
 			match = PATTERN.exec(text);
 		}
 
@@ -100,6 +103,9 @@ export default function (pi: ExtensionAPI) {
 			);
 		}
 
+		if (event.images === undefined) {
+			return { action: "transform", text: result };
+		}
 		return { action: "transform", text: result, images: event.images };
 	});
 }

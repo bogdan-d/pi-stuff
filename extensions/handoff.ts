@@ -13,7 +13,12 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { complete, type Message } from "@earendil-works/pi-ai";
+import {
+	complete,
+	type Message,
+	type ProviderStreamOptions,
+	type TextContent,
+} from "@earendil-works/pi-ai/compat";
 import type {
 	ExtensionAPI,
 	SessionEntry,
@@ -64,7 +69,7 @@ function entryToMessage(entry: SessionEntry): AgentMessage | undefined {
 function getHandoffMessages(branch: SessionEntry[]): AgentMessage[] {
 	let compactionIndex = -1;
 	for (let i = branch.length - 1; i >= 0; i--) {
-		if (branch[i].type === "compaction") {
+		if (branch[i]?.type === "compaction") {
 			compactionIndex = i;
 			break;
 		}
@@ -72,14 +77,17 @@ function getHandoffMessages(branch: SessionEntry[]): AgentMessage[] {
 	if (compactionIndex < 0) {
 		return branch
 			.map(entryToMessage)
-			.filter((message) => message !== undefined);
+			.filter((message): message is AgentMessage => message !== undefined);
 	}
 
 	const compaction = branch[compactionIndex];
-	const firstKeptIndex =
-		compaction.type === "compaction"
-			? branch.findIndex((entry) => entry.id === compaction.firstKeptEntryId)
-			: -1;
+	if (!compaction || compaction.type !== "compaction") {
+		return [];
+	}
+
+	const firstKeptIndex = branch.findIndex(
+		(entry) => entry.id === compaction.firstKeptEntryId,
+	);
 	const compactedBranch = [
 		compaction,
 		...(firstKeptIndex >= 0
@@ -89,7 +97,7 @@ function getHandoffMessages(branch: SessionEntry[]): AgentMessage[] {
 	];
 	return compactedBranch
 		.map(entryToMessage)
-		.filter((message) => message !== undefined);
+		.filter((message): message is AgentMessage => message !== undefined);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -157,14 +165,18 @@ export default function (pi: ExtensionAPI) {
 							timestamp: Date.now(),
 						};
 
+						const requestOptions: ProviderStreamOptions = {
+							apiKey: auth.apiKey,
+							signal: loader.signal,
+						};
+						if (auth.headers !== undefined) {
+							requestOptions.headers = auth.headers;
+						}
+
 						const response = await complete(
 							ctx.model!,
 							{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-							{
-								apiKey: auth.apiKey,
-								headers: auth.headers,
-								signal: loader.signal,
-							},
+							requestOptions,
 						);
 
 						if (response.stopReason === "aborted") {
@@ -172,9 +184,7 @@ export default function (pi: ExtensionAPI) {
 						}
 
 						return response.content
-							.filter(
-								(c): c is { type: "text"; text: string } => c.type === "text",
-							)
+							.filter((c): c is TextContent => c.type === "text")
 							.map((c) => c.text)
 							.join("\n");
 					};
@@ -207,7 +217,9 @@ export default function (pi: ExtensionAPI) {
 			// context for post-switch UI work; the original ctx is stale after a
 			// successful session replacement.
 			const newSessionResult = await ctx.newSession({
-				parentSession: currentSessionFile,
+				...(currentSessionFile !== undefined
+					? { parentSession: currentSessionFile }
+					: {}),
 				withSession: async (replacementCtx) => {
 					replacementCtx.ui.setEditorText(editedPrompt);
 					replacementCtx.ui.notify("Handoff ready. Submit when ready.", "info");

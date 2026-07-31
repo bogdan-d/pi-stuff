@@ -7,7 +7,12 @@
  * 3. Loads the result into the editor for user to fill in answers
  */
 
-import { complete, type UserMessage } from "@earendil-works/pi-ai";
+import {
+	complete,
+	type ProviderStreamOptions,
+	type TextContent,
+	type UserMessage,
+} from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { BorderedLoader } from "@earendil-works/pi-coding-agent";
 
@@ -47,26 +52,28 @@ export default function (pi: ExtensionAPI) {
 
 			for (let i = branch.length - 1; i >= 0; i--) {
 				const entry = branch[i];
-				if (entry.type === "message") {
-					const msg = entry.message;
-					if ("role" in msg && msg.role === "assistant") {
-						if (msg.stopReason !== "stop") {
-							ctx.ui.notify(
-								`Last assistant message incomplete (${msg.stopReason})`,
-								"error",
-							);
-							return;
-						}
-						const textParts = msg.content
-							.filter(
-								(c): c is { type: "text"; text: string } => c.type === "text",
-							)
-							.map((c) => c.text);
-						if (textParts.length > 0) {
-							lastAssistantText = textParts.join("\n");
-							break;
-						}
-					}
+				if (entry?.type !== "message") {
+					continue;
+				}
+
+				const msg = entry.message;
+				if (msg.role !== "assistant") {
+					continue;
+				}
+
+				if (msg.stopReason !== "stop") {
+					ctx.ui.notify(
+						`Last assistant message incomplete (${msg.stopReason})`,
+						"error",
+					);
+					return;
+				}
+				const textParts = msg.content
+					.filter((c): c is TextContent => c.type === "text")
+					.map((c) => c.text);
+				if (textParts.length > 0) {
+					lastAssistantText = textParts.join("\n");
+					break;
 				}
 			}
 
@@ -74,6 +81,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("No assistant messages found", "error");
 				return;
 			}
+			const assistantText = lastAssistantText;
 
 			// Run extraction with loader UI
 			const result = await ctx.ui.custom<string | null>(
@@ -97,18 +105,22 @@ export default function (pi: ExtensionAPI) {
 						}
 						const userMessage: UserMessage = {
 							role: "user",
-							content: [{ type: "text", text: lastAssistantText! }],
+							content: [{ type: "text", text: assistantText }],
 							timestamp: Date.now(),
 						};
+
+						const requestOptions: ProviderStreamOptions = {
+							apiKey: auth.apiKey,
+							signal: loader.signal,
+						};
+						if (auth.headers !== undefined) {
+							requestOptions.headers = auth.headers;
+						}
 
 						const response = await complete(
 							ctx.model!,
 							{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-							{
-								apiKey: auth.apiKey,
-								headers: auth.headers,
-								signal: loader.signal,
-							},
+							requestOptions,
 						);
 
 						if (response.stopReason === "aborted") {
@@ -116,9 +128,7 @@ export default function (pi: ExtensionAPI) {
 						}
 
 						return response.content
-							.filter(
-								(c): c is { type: "text"; text: string } => c.type === "text",
-							)
+							.filter((c): c is TextContent => c.type === "text")
 							.map((c) => c.text)
 							.join("\n");
 					};

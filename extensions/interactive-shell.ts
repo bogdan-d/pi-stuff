@@ -99,13 +99,14 @@ const DEFAULT_INTERACTIVE_COMMANDS = [
 
 function getInteractiveCommands(): string[] {
 	const additional =
-		process.env.INTERACTIVE_COMMANDS?.split(",")
+		process.env["INTERACTIVE_COMMANDS"]
+			?.split(",")
 			.map((s) => s.trim())
 			.filter(Boolean) ?? [];
 	const excluded = new Set(
-		process.env.INTERACTIVE_EXCLUDE?.split(",").map((s) =>
-			s.trim().toLowerCase(),
-		) ?? [],
+		process.env["INTERACTIVE_EXCLUDE"]
+			?.split(",")
+			.map((s) => s.trim().toLowerCase()) ?? [],
 	);
 	return [...DEFAULT_INTERACTIVE_COMMANDS, ...additional].filter(
 		(cmd) => !excluded.has(cmd.toLowerCase()),
@@ -178,7 +179,7 @@ export default function (pi: ExtensionAPI) {
 				process.stdout.write("\x1b[2J\x1b[H");
 
 				// Run command with full terminal access
-				const shell = process.env.SHELL || "/bin/sh";
+				const shell = process.env["SHELL"] || "/bin/sh";
 				const result = spawnSync(shell, ["-c", command], {
 					stdio: "inherit",
 					env: process.env,

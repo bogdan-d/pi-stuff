@@ -43,9 +43,9 @@ function notifyWindows(title: string, body: string): void {
 }
 
 function notify(title: string, body: string): void {
-	if (process.env.WT_SESSION) {
+	if (process.env["WT_SESSION"]) {
 		notifyWindows(title, body);
-	} else if (process.env.KITTY_WINDOW_ID) {
+	} else if (process.env["KITTY_WINDOW_ID"]) {
 		notifyOSC99(title, body);
 	} else {
 		notifyOSC777(title, body);

@@ -301,7 +301,7 @@ After completing a step, include a [DONE:n] tag in your response.`,
 
 			const execMessage =
 				todoItems.length > 0
-					? `Execute the plan. Start with: ${todoItems[0].text}`
+					? `Execute the plan. Start with: ${todoItems[0]?.text ?? "the first step"}`
 					: "Execute the plan you just created.";
 			pi.sendMessage(
 				{
@@ -361,6 +361,7 @@ After completing a step, include a [DONE:n] tag in your response.`,
 			const messages: AssistantMessage[] = [];
 			for (let i = executeIndex + 1; i < entries.length; i++) {
 				const entry = entries[i];
+				if (!entry) continue;
 				if (
 					entry.type === "message" &&
 					"message" in entry &&

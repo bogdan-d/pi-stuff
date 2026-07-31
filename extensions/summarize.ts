@@ -1,28 +1,20 @@
-import { complete, getModel } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type {
+	AssistantMessage,
+	ProviderStreamOptions,
+	UserMessage,
+} from "@earendil-works/pi-ai";
+import { complete, getModel } from "@earendil-works/pi-ai/compat";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
+	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import {
 	DynamicBorder,
 	getMarkdownTheme,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, matchesKey, Text } from "@earendil-works/pi-tui";
-
-type ContentBlock = {
-	type?: string;
-	text?: string;
-	name?: string;
-	arguments?: Record<string, unknown>;
-};
-
-type SessionEntry = {
-	type: string;
-	message?: {
-		role?: string;
-		content?: unknown;
-	};
-};
 
 const extractTextParts = (content: unknown): string[] => {
 	if (typeof content === "string") {
@@ -39,9 +31,13 @@ const extractTextParts = (content: unknown): string[] => {
 			continue;
 		}
 
-		const block = part as ContentBlock;
-		if (block.type === "text" && typeof block.text === "string") {
-			textParts.push(block.text);
+		if (
+			"type" in part &&
+			part.type === "text" &&
+			"text" in part &&
+			typeof part.text === "string"
+		) {
+			textParts.push(part.text);
 		}
 	}
 
@@ -59,14 +55,19 @@ const extractToolCallLines = (content: unknown): string[] => {
 			continue;
 		}
 
-		const block = part as ContentBlock;
-		if (block.type !== "toolCall" || typeof block.name !== "string") {
+		if (
+			!("type" in part) ||
+			part.type !== "toolCall" ||
+			!("name" in part) ||
+			typeof part.name !== "string"
+		) {
 			continue;
 		}
 
-		const args = block.arguments ?? {};
+		const args =
+			"arguments" in part && part.arguments != null ? part.arguments : {};
 		toolCalls.push(
-			`Tool ${block.name} was called with args ${JSON.stringify(args)}`,
+			`Tool ${part.name} was called with args ${JSON.stringify(args)}`,
 		);
 	}
 
@@ -77,11 +78,16 @@ const buildConversationText = (entries: SessionEntry[]): string => {
 	const sections: string[] = [];
 
 	for (const entry of entries) {
-		if (entry.type !== "message" || !entry.message?.role) {
+		if (entry.type !== "message") {
 			continue;
 		}
 
-		const role = entry.message.role;
+		const message = entry.message;
+		if (!isConversationMessage(message)) {
+			continue;
+		}
+
+		const role = message.role;
 		const isUser = role === "user";
 		const isAssistant = role === "assistant";
 
@@ -90,7 +96,7 @@ const buildConversationText = (entries: SessionEntry[]): string => {
 		}
 
 		const entryLines: string[] = [];
-		const textParts = extractTextParts(entry.message.content);
+		const textParts = extractTextParts(message.content);
 		if (textParts.length > 0) {
 			const roleLabel = isUser ? "User" : "Assistant";
 			const messageText = textParts.join("\n").trim();
@@ -100,7 +106,7 @@ const buildConversationText = (entries: SessionEntry[]): string => {
 		}
 
 		if (isAssistant) {
-			entryLines.push(...extractToolCallLines(entry.message.content));
+			entryLines.push(...extractToolCallLines(message.content));
 		}
 
 		if (entryLines.length > 0) {
@@ -110,6 +116,11 @@ const buildConversationText = (entries: SessionEntry[]): string => {
 
 	return sections.join("\n\n");
 };
+
+const isConversationMessage = (
+	message: AgentMessage,
+): message is UserMessage | AssistantMessage =>
+	message.role === "user" || message.role === "assistant";
 
 const buildSummaryPrompt = (conversationText: string): string =>
 	[
@@ -204,14 +215,18 @@ export default function (pi: ExtensionAPI) {
 				},
 			];
 
+			const requestOptions: ProviderStreamOptions = {
+				apiKey: auth.apiKey,
+				reasoningEffort: "high",
+			};
+			if (auth.headers !== undefined) {
+				requestOptions.headers = auth.headers;
+			}
+
 			const response = await complete(
 				model,
 				{ messages: summaryMessages },
-				{
-					apiKey: auth.apiKey,
-					headers: auth.headers,
-					reasoningEffort: "high",
-				},
+				requestOptions,
 			);
 
 			const summary = response.content

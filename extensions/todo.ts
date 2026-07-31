@@ -45,8 +45,8 @@ class TodoListComponent {
 	private todos: Todo[];
 	private theme: Theme;
 	private onClose: () => void;
-	private cachedWidth?: number;
-	private cachedLines?: string[];
+	private cachedWidth: number | undefined;
+	private cachedLines: string[] | undefined;
 
 	constructor(todos: Todo[], theme: Theme, onClose: () => void) {
 		this.todos = todos;
@@ -328,6 +328,9 @@ export default function (pi: ExtensionAPI) {
 
 				case "add": {
 					const added = todoList[todoList.length - 1];
+					if (!added) {
+						return new Text(theme.fg("error", "Added todo missing"), 0, 0);
+					}
 					return new Text(
 						theme.fg("success", "✓ Added ") +
 							theme.fg("accent", `#${added.id}`) +

@@ -32,7 +32,7 @@ const PASTEL_RAINBOW = [
 	"\x1b[38;2;186;255;201m",
 	"\x1b[38;2;186;225;255m",
 	"\x1b[38;2;218;186;255m",
-];
+] as const;
 const RESET_FG = "\x1b[39m";
 const HIDDEN_INDICATOR: WorkingIndicatorOptions = {
 	frames: [],

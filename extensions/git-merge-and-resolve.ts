@@ -123,6 +123,7 @@ export default function (pi: ExtensionAPI) {
 
 			ref = upstream.trim();
 			const remote = ref.split("/")[0];
+			if (!remote) return;
 			ctx.ui.notify(
 				`git-merge-and-resolve: fetching ${remote}, merging ${ref}`,
 				"info",

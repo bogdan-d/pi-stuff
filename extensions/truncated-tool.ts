@@ -51,6 +51,29 @@ interface RgDetails {
 	fullOutputPath?: string;
 }
 
+function makeRgDetails(
+	pattern: string,
+	path: string | undefined,
+	glob: string | undefined,
+	matchCount: number,
+): RgDetails {
+	return {
+		pattern,
+		matchCount,
+		...(path === undefined ? {} : { path }),
+		...(glob === undefined ? {} : { glob }),
+	};
+}
+
+function hasExitStatus(error: unknown): error is { status: number } {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"status" in error &&
+		typeof error.status === "number"
+	);
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "rg",
@@ -75,31 +98,23 @@ export default function (pi: ExtensionAPI) {
 					encoding: "utf-8",
 					maxBuffer: 100 * 1024 * 1024, // 100MB buffer to capture full output
 				});
-			} catch (err: any) {
+			} catch (err: unknown) {
 				// ripgrep exits with 1 when no matches found
-				if (err.status === 1) {
+				if (hasExitStatus(err) && err.status === 1) {
 					return {
 						content: [{ type: "text", text: "No matches found" }],
-						details: {
-							pattern,
-							path: searchPath,
-							glob,
-							matchCount: 0,
-						} as RgDetails,
+						details: makeRgDetails(pattern, searchPath, glob, 0),
 					};
 				}
-				throw new Error(`ripgrep failed: ${err.message}`);
+				throw new Error(
+					`ripgrep failed: ${err instanceof Error ? err.message : String(err)}`,
+				);
 			}
 
 			if (!output.trim()) {
 				return {
 					content: [{ type: "text", text: "No matches found" }],
-					details: {
-						pattern,
-						path: searchPath,
-						glob,
-						matchCount: 0,
-					} as RgDetails,
+					details: makeRgDetails(pattern, searchPath, glob, 0),
 				};
 			}
 
@@ -116,12 +131,7 @@ export default function (pi: ExtensionAPI) {
 				.split("\n")
 				.filter((line) => line.trim()).length;
 
-			const details: RgDetails = {
-				pattern,
-				path: searchPath,
-				glob,
-				matchCount,
-			};
+			const details = makeRgDetails(pattern, searchPath, glob, matchCount);
 
 			let resultText = truncation.content;
 
