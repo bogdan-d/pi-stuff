@@ -31,3 +31,13 @@ cannot replace role policy or configure tools, extensions, or skills. Children
 use the selected model's extension-provided tools, while skills remain disabled.
 
 The file is read when the extension loads. Run `/reload` after editing it.
+
+## Commands
+
+- `/agent-add` creates a custom agent.
+- `/agent-edit` edits an existing custom agent; names are immutable.
+- `/agent-remove` removes a custom agent after confirmation.
+
+Each command keeps changes in memory until final confirmation, writes the JSON
+atomically, then reloads Pi. Escape cancels without changing the file. Built-in
+agents cannot be edited or removed.

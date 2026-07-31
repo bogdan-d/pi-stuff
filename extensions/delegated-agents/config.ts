@@ -1,13 +1,19 @@
-import { readFileSync } from "node:fs";
+import {
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { ROLE_NAMES } from "./roles.js";
 import type { CustomAgentConfig, RoleName } from "./types.js";
 
 export const CONFIG_FILENAME = "pi-delegated-agents.json";
 
-const AGENT_NAME = /^[a-z][a-z0-9-]{0,63}$/;
+export const AGENT_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 const ENTRY_FIELDS = new Set([
 	"role",
 	"description",
@@ -16,7 +22,7 @@ const ENTRY_FIELDS = new Set([
 	"thinking",
 ]);
 const ROLE_SET = new Set<string>(ROLE_NAMES);
-const THINKING_LEVELS = [
+export const THINKING_LEVELS = [
 	"off",
 	"minimal",
 	"low",
@@ -69,7 +75,7 @@ export function parseCustomAgentConfig(
 	const agents: Record<string, CustomAgentConfig> = {};
 	for (const [name, raw] of Object.entries(value["agents"])) {
 		const base = `agents.${name}`;
-		if (!AGENT_NAME.test(name)) {
+		if (!AGENT_NAME_PATTERN.test(name)) {
 			invalid(sourcePath, base, "name must match ^[a-z][a-z0-9-]{0,63}$");
 		}
 		if (ROLE_SET.has(name)) {
@@ -130,8 +136,9 @@ export function getCustomAgentConfigPath(): string {
 	return join(getAgentDirectory(), CONFIG_FILENAME);
 }
 
-export function loadCustomAgentConfig(): CustomAgentsConfig {
-	const configPath = getCustomAgentConfigPath();
+export function loadCustomAgentConfig(
+	configPath: string = getCustomAgentConfigPath(),
+): CustomAgentsConfig {
 	let source: string;
 	try {
 		source = readFileSync(configPath, "utf8");
@@ -151,4 +158,34 @@ export function loadCustomAgentConfig(): CustomAgentsConfig {
 		);
 	}
 	return parseCustomAgentConfig(parsed, configPath);
+}
+
+export function writeCustomAgentConfig(
+	config: CustomAgentsConfig,
+	configPath: string = getCustomAgentConfigPath(),
+): void {
+	const normalized = parseCustomAgentConfig(config, configPath);
+	const sorted: CustomAgentsConfig = {
+		agents: Object.fromEntries(
+			Object.entries(normalized.agents).sort(([left], [right]) =>
+				left.localeCompare(right),
+			),
+		),
+	};
+	const temporaryPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+	try {
+		mkdirSync(dirname(configPath), { recursive: true });
+		writeFileSync(temporaryPath, `${JSON.stringify(sorted, null, 2)}\n`, {
+			encoding: "utf8",
+			mode: 0o600,
+		});
+		renameSync(temporaryPath, configPath);
+	} catch (error) {
+		try {
+			rmSync(temporaryPath, { force: true });
+		} catch {
+			// Preserve the original write error.
+		}
+		throw error;
+	}
 }
