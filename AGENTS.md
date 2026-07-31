@@ -9,7 +9,8 @@ This repository is a private Bun/TypeScript package for Pi coding agent extensio
 Use Bun 1.3.14 or newer compatible Bun.
 
 - `bun install`: install dev tooling and Pi type packages.
-- `bun run check`: run Biome checks, then `tsc --noEmit`.
+- `bun run check`: run Biome checks, TypeScript validation, and tests.
+- `bun run test`: run the Bun test suite.
 - `bun run lint`: run `biome check .`; lint rules are disabled, but formatting/import checks still apply.
 - `bun run typecheck`: run strict TypeScript validation.
 - `bun run format`: apply Biome formatting fixes.
@@ -22,7 +23,7 @@ Use TypeScript ESM with strict compiler settings. Biome formatting uses tabs, do
 
 ## Testing Guidelines
 
-No dedicated test framework is configured. Treat `bun run check` as the required validation gate before submitting changes. For runtime behavior, test by loading the package in Pi and using `/reload`; include the affected extension, prompt, or theme in manual test notes. If tests are added later, keep them close to the extension they cover and document the new command in `package.json`.
+Bun's test runner is configured. Keep focused tests under `tests/` and treat `bun run check` as the required validation gate before submitting changes. For runtime behavior, also test by loading the package in Pi and using `/reload`; include the affected extension, prompt, or theme in manual test notes.
 
 ## Commit & Pull Request Guidelines
 
