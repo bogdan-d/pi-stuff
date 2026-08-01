@@ -2,7 +2,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { loadAgentCatalog } from "./agents.js";
+import { getEnabledAgentCatalog, loadAgentCatalog } from "./agents.js";
 import { registerBackgroundAgentTools } from "./background-tools.js";
 import { registerAgentCommands } from "./commands.js";
 import { registerAgentInspector } from "./inspector.js";
@@ -48,7 +48,9 @@ export default function (pi: ExtensionAPI): void {
 			notifyBackgroundSettled(pi, run);
 		},
 	});
-	registerDelegateAgentTool(pi, catalog, manager);
+	const enabledCatalog = getEnabledAgentCatalog(catalog);
+	if (enabledCatalog.size)
+		registerDelegateAgentTool(pi, enabledCatalog, manager);
 	registerBackgroundAgentTools(pi, manager);
 	registerAgentCommands(pi);
 	registerAgentInspector(pi, history, manager);

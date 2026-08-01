@@ -16,6 +16,7 @@ export function createAgentCatalog(config: CustomAgentsConfig): AgentCatalog {
 			rolePromptPath: spec.promptPath,
 			...(model ? { model } : {}),
 			...(thinking ? { thinking } : {}),
+			disabled: override?.disabled ?? false,
 			source: "builtin",
 		});
 	}
@@ -24,8 +25,9 @@ export function createAgentCatalog(config: CustomAgentsConfig): AgentCatalog {
 		const custom = config.agents[name];
 		if (!custom) continue;
 		const role = ROLES[custom.role];
-		const model = custom.model ?? role.model;
-		const thinking = custom.thinking ?? role.thinking;
+		const override = config.overrides?.[name];
+		const model = override?.model ?? custom.model ?? role.model;
+		const thinking = override?.thinking ?? custom.thinking ?? role.thinking;
 		catalog.set(name, {
 			name,
 			role: custom.role,
@@ -34,6 +36,7 @@ export function createAgentCatalog(config: CustomAgentsConfig): AgentCatalog {
 			specializationPrompt: custom.prompt,
 			...(model ? { model } : {}),
 			...(thinking ? { thinking } : {}),
+			disabled: override?.disabled ?? false,
 			source: "config",
 		});
 	}
@@ -46,6 +49,10 @@ export function loadAgentCatalog(): AgentCatalog {
 
 export function getAgentNames(catalog: AgentCatalog): string[] {
 	return [...catalog.keys()];
+}
+
+export function getEnabledAgentCatalog(catalog: AgentCatalog): AgentCatalog {
+	return new Map([...catalog].filter(([, spec]) => !spec.disabled));
 }
 
 export function formatAgentCatalog(catalog: AgentCatalog): string {

@@ -1,9 +1,11 @@
+import { readFileSync } from "node:fs";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionUIContext,
 } from "@earendil-works/pi-coding-agent";
+import { createAgentCatalog, getAgentNames } from "./agents.js";
 import {
 	AGENT_NAME_PATTERN,
 	type CustomAgentsConfig,
@@ -12,8 +14,8 @@ import {
 	THINKING_LEVELS,
 	writeCustomAgentConfig,
 } from "./config.js";
-import { ROLE_NAMES } from "./roles.js";
-import type { CustomAgentConfig, RoleName } from "./types.js";
+import { ROLE_NAMES, ROLES } from "./roles.js";
+import type { AgentOverride, CustomAgentConfig, RoleName } from "./types.js";
 
 const DEFAULT = "role/parent default";
 
@@ -84,6 +86,7 @@ async function selectThinking(
 async function promptAgent(
 	ctx: AgentCommandContext,
 	current?: CustomAgentConfig,
+	blockedPrompt?: string,
 ): Promise<CustomAgentConfig | undefined> {
 	const role = await ctx.ui.select("Role", [
 		...(current ? [current.role] : []),
@@ -96,12 +99,22 @@ async function promptAgent(
 		current?.description,
 	);
 	if (description === undefined) return undefined;
-	const prompt = await requiredEditor(
-		ctx,
-		"Specialization prompt",
-		current?.prompt,
-	);
-	if (prompt === undefined) return undefined;
+	let prompt: string | undefined;
+	while (prompt === undefined) {
+		prompt = await requiredEditor(
+			ctx,
+			"Specialization prompt",
+			current?.prompt,
+		);
+		if (prompt === undefined) return undefined;
+		if (prompt === blockedPrompt) {
+			ctx.ui.notify(
+				"Modify the copied role prompt to avoid running it twice.",
+				"warning",
+			);
+			prompt = undefined;
+		}
+	}
 	const model = await optionalEditor(
 		ctx,
 		"Model (blank = role/parent default)",
@@ -120,10 +133,80 @@ async function promptAgent(
 	};
 }
 
-function formatAgent(name: string, agent: CustomAgentConfig): string {
+async function selectDisabled(
+	ctx: AgentCommandContext,
+	disabled = false,
+): Promise<boolean | undefined> {
+	const current = disabled ? "disabled" : "enabled";
+	const selected = await ctx.ui.select("Status", [
+		current,
+		current === "enabled" ? "disabled" : "enabled",
+	]);
+	return selected === undefined ? undefined : selected === "disabled";
+}
+
+function withOverride(
+	config: CustomAgentsConfig,
+	name: string,
+	override: AgentOverride,
+): CustomAgentsConfig {
+	const overrides = { ...config.overrides };
+	if (Object.keys(override).length) overrides[name] = override;
+	else delete overrides[name];
+	return {
+		...(Object.keys(overrides).length ? { overrides } : {}),
+		agents: config.agents,
+	};
+}
+
+function agentLabel(config: CustomAgentsConfig, name: string): string {
+	return config.overrides?.[name]?.disabled ? `${name} [disabled]` : name;
+}
+
+async function selectAgent(
+	ctx: AgentCommandContext,
+	config: CustomAgentsConfig,
+	title: string,
+	names: string[],
+): Promise<string | undefined> {
+	const choices = new Map(
+		names.map((name) => [agentLabel(config, name), name]),
+	);
+	const selected = await ctx.ui.select(title, [...choices.keys()]);
+	return selected === undefined ? undefined : choices.get(selected);
+}
+
+async function uniqueAgentName(
+	ctx: AgentCommandContext,
+	config: CustomAgentsConfig,
+): Promise<string | undefined> {
+	while (true) {
+		const candidate = await requiredInput(ctx, "Agent name", "lowercase-name");
+		if (candidate === undefined) return undefined;
+		if (!AGENT_NAME_PATTERN.test(candidate)) {
+			ctx.ui.notify("Name must match ^[a-z][a-z0-9-]{0,63}$.", "warning");
+			continue;
+		}
+		if (
+			ROLE_NAMES.includes(candidate as RoleName) ||
+			Object.hasOwn(config.agents, candidate)
+		) {
+			ctx.ui.notify(`Agent ${candidate} already exists.`, "warning");
+			continue;
+		}
+		return candidate;
+	}
+}
+
+function formatAgent(
+	name: string,
+	agent: CustomAgentConfig,
+	disabled = false,
+): string {
 	return [
 		`Name: ${name}`,
 		`Role: ${agent.role}`,
+		`Status: ${disabled ? "disabled" : "enabled"}`,
 		`Description: ${agent.description}`,
 		`Model: ${agent.model ?? DEFAULT}`,
 		`Thinking: ${agent.thinking ?? DEFAULT}`,
@@ -179,29 +262,14 @@ export async function runAgentAdd(
 	configPath: string = getCustomAgentConfigPath(),
 ): Promise<void> {
 	if (!ctx.hasUI) {
-		ctx.ui.notify("/agent-add requires interactive UI.", "error");
+		ctx.ui.notify("/subagent-add requires interactive UI.", "error");
 		return;
 	}
 	const config = loadForCommand(ctx, configPath);
 	if (!config) return;
 
-	let name: string | undefined;
-	while (!name) {
-		const candidate = await requiredInput(ctx, "Agent name", "lowercase-name");
-		if (candidate === undefined) return;
-		if (!AGENT_NAME_PATTERN.test(candidate)) {
-			ctx.ui.notify("Name must match ^[a-z][a-z0-9-]{0,63}$.", "warning");
-			continue;
-		}
-		if (
-			ROLE_NAMES.includes(candidate as RoleName) ||
-			config.agents[candidate]
-		) {
-			ctx.ui.notify(`Agent ${candidate} already exists.`, "warning");
-			continue;
-		}
-		name = candidate;
-	}
+	const name = await uniqueAgentName(ctx, config);
+	if (!name) return;
 
 	const agent = await promptAgent(ctx);
 	if (!agent) return;
@@ -219,7 +287,7 @@ export async function runAgentEdit(
 	configPath: string = getCustomAgentConfigPath(),
 ): Promise<void> {
 	if (!ctx.hasUI) {
-		ctx.ui.notify("/agent-edit requires interactive UI.", "error");
+		ctx.ui.notify("/subagent-edit requires interactive UI.", "error");
 		return;
 	}
 	const config = loadForCommand(ctx, configPath);
@@ -229,16 +297,25 @@ export async function runAgentEdit(
 		ctx.ui.notify("No custom agents to edit.", "info");
 		return;
 	}
-	const name = await ctx.ui.select("Agent to edit", names);
+	const name = await selectAgent(ctx, config, "Agent to edit", names);
 	if (name === undefined) return;
 	const current = config.agents[name];
 	if (!current) return;
 	const agent = await promptAgent(ctx, current);
 	if (!agent) return;
-	if (!(await ctx.ui.confirm("Save agent?", formatAgent(name, agent)))) return;
+	const disabled = await selectDisabled(
+		ctx,
+		config.overrides?.[name]?.disabled,
+	);
+	if (disabled === undefined) return;
+	if (
+		!(await ctx.ui.confirm("Save agent?", formatAgent(name, agent, disabled)))
+	)
+		return;
+	const edited = withOverride(config, name, disabled ? { disabled: true } : {});
 	await saveAndReload(
 		ctx,
-		{ ...config, agents: { ...config.agents, [name]: agent } },
+		{ ...edited, agents: { ...config.agents, [name]: agent } },
 		configPath,
 		`Updated agent ${name}.`,
 	);
@@ -249,7 +326,7 @@ export async function runAgentRemove(
 	configPath: string = getCustomAgentConfigPath(),
 ): Promise<void> {
 	if (!ctx.hasUI) {
-		ctx.ui.notify("/agent-remove requires interactive UI.", "error");
+		ctx.ui.notify("/subagent-remove requires interactive UI.", "error");
 		return;
 	}
 	const config = loadForCommand(ctx, configPath);
@@ -259,7 +336,7 @@ export async function runAgentRemove(
 		ctx.ui.notify("No custom agents to remove.", "info");
 		return;
 	}
-	const name = await ctx.ui.select("Agent to remove", names);
+	const name = await selectAgent(ctx, config, "Agent to remove", names);
 	if (name === undefined) return;
 	const agent = config.agents[name];
 	if (!agent) return;
@@ -270,12 +347,132 @@ export async function runAgentRemove(
 
 	const agents = { ...config.agents };
 	delete agents[name];
+	const cleaned = withOverride(config, name, {});
 	await saveAndReload(
 		ctx,
-		{ ...config, agents },
+		{ ...cleaned, agents },
 		configPath,
 		`Removed agent ${name}.`,
 	);
+}
+
+export async function runAgentOverride(
+	ctx: AgentCommandContext,
+	configPath: string = getCustomAgentConfigPath(),
+): Promise<void> {
+	if (!ctx.hasUI) {
+		ctx.ui.notify("/subagent-override requires interactive UI.", "error");
+		return;
+	}
+	const config = loadForCommand(ctx, configPath);
+	if (!config) return;
+	const name = await selectAgent(
+		ctx,
+		config,
+		"Agent to override",
+		getAgentNames(createAgentCatalog(config)),
+	);
+	if (name === undefined) return;
+	const current = config.overrides?.[name];
+	const model = await optionalEditor(
+		ctx,
+		"Model (blank = agent/parent default)",
+		current?.model,
+	);
+	if (model.cancelled) return;
+	const thinking = await selectThinking(ctx, current?.thinking);
+	if (thinking.cancelled) return;
+	const disabled = await selectDisabled(ctx, current?.disabled);
+	if (disabled === undefined) return;
+	const override: AgentOverride = {
+		...(model.value ? { model: model.value } : {}),
+		...(thinking.value ? { thinking: thinking.value } : {}),
+		...(disabled ? { disabled: true } : {}),
+	};
+	if (
+		!(await ctx.ui.confirm(
+			"Save override?",
+			`Agent: ${name}\nModel: ${override.model ?? DEFAULT}\nThinking: ${override.thinking ?? DEFAULT}\nStatus: ${disabled ? "disabled" : "enabled"}`,
+		))
+	)
+		return;
+	await saveAndReload(
+		ctx,
+		withOverride(config, name, override),
+		configPath,
+		`Updated override for ${name}.`,
+	);
+}
+
+export async function runAgentClone(
+	ctx: AgentCommandContext,
+	configPath: string = getCustomAgentConfigPath(),
+	readPrompt: (path: string) => string = (path) => readFileSync(path, "utf8"),
+): Promise<void> {
+	if (!ctx.hasUI) {
+		ctx.ui.notify("/subagent-clone requires interactive UI.", "error");
+		return;
+	}
+	const config = loadForCommand(ctx, configPath);
+	if (!config) return;
+	const sourceName = await selectAgent(
+		ctx,
+		config,
+		"Agent to clone",
+		getAgentNames(createAgentCatalog(config)),
+	);
+	if (sourceName === undefined) return;
+	const name = await uniqueAgentName(ctx, config);
+	if (!name) return;
+	const custom = config.agents[sourceName];
+	const roleName = ROLE_NAMES.includes(sourceName as RoleName)
+		? (sourceName as RoleName)
+		: custom?.role;
+	if (!roleName) return;
+	const role = ROLES[roleName];
+	let copiedRolePrompt: string | undefined;
+	if (!custom) {
+		try {
+			copiedRolePrompt = readPrompt(role.promptPath).trim();
+		} catch (error) {
+			ctx.ui.notify(
+				`Failed to read ${role.promptPath}: ${error instanceof Error ? error.message : String(error)}`,
+				"error",
+			);
+			return;
+		}
+	}
+	const source: CustomAgentConfig = custom
+		? { ...custom }
+		: {
+				role: roleName,
+				description: role.description,
+				prompt: copiedRolePrompt!,
+				...(role.model ? { model: role.model } : {}),
+				...(role.thinking ? { thinking: role.thinking } : {}),
+			};
+	const agent = await promptAgent(ctx, source, copiedRolePrompt);
+	if (!agent) return;
+	if (!(await ctx.ui.confirm("Clone agent?", formatAgent(name, agent)))) return;
+	await saveAndReload(
+		ctx,
+		{ ...config, agents: { ...config.agents, [name]: agent } },
+		configPath,
+		`Cloned ${sourceName} as ${name}.`,
+	);
+}
+
+export async function runAgentList(
+	ctx: AgentCommandContext,
+	configPath: string = getCustomAgentConfigPath(),
+): Promise<void> {
+	const config = loadForCommand(ctx, configPath);
+	if (!config) return;
+	const lines = [...createAgentCatalog(config).values()].map(
+		(agent) =>
+			`${agentLabel(config, agent.name)} (${agent.role}) — ${agent.description}`,
+	);
+	ctx.ui.notify(lines.join("\n"), "info");
 }
 
 export function registerAgentCommands(pi: ExtensionAPI): void {
@@ -286,9 +483,12 @@ export function registerAgentCommands(pi: ExtensionAPI): void {
 			run: (ctx: AgentCommandContext) => Promise<void>,
 		]
 	> = [
-		["agent-add", "Add a custom delegated agent", runAgentAdd],
-		["agent-edit", "Edit a custom delegated agent", runAgentEdit],
-		["agent-remove", "Remove a custom delegated agent", runAgentRemove],
+		["subagent-add", "Add a custom delegated agent", runAgentAdd],
+		["subagent-edit", "Edit a custom delegated agent", runAgentEdit],
+		["subagent-remove", "Remove a custom delegated agent", runAgentRemove],
+		["subagent-override", "Override any delegated agent", runAgentOverride],
+		["subagent-clone", "Clone any delegated agent", runAgentClone],
+		["subagent-list", "List all delegated agents", runAgentList],
 	];
 	for (const [name, description, run] of commands) {
 		pi.registerCommand(name, {

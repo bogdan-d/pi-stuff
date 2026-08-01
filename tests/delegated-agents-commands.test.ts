@@ -13,13 +13,17 @@ import {
 	type AgentCommandContext,
 	registerAgentCommands,
 	runAgentAdd,
+	runAgentClone,
 	runAgentEdit,
+	runAgentList,
+	runAgentOverride,
 	runAgentRemove,
 } from "../extensions/delegated-agents/commands.js";
 import {
 	loadCustomAgentConfig,
 	writeCustomAgentConfig,
 } from "../extensions/delegated-agents/config.js";
+import { ROLES } from "../extensions/delegated-agents/roles.js";
 
 const directories: string[] = [];
 
@@ -112,7 +116,7 @@ describe("delegated agent commands", () => {
 			path,
 		);
 		const ctx = new FakeContext();
-		ctx.selections.push("rust", "review", "role/parent default");
+		ctx.selections.push("rust", "review", "role/parent default", "enabled");
 		ctx.editors.push("New description", "New prompt", "");
 		ctx.confirmations.push(true);
 
@@ -132,6 +136,158 @@ describe("delegated agent commands", () => {
 			written.indexOf('"planning"'),
 		);
 		expect(ctx.reloads).toBe(1);
+	});
+
+	test("overrides and disables any agent", async () => {
+		const path = configPath();
+		writeCustomAgentConfig({ agents: {} }, path);
+		const ctx = new FakeContext();
+		ctx.selections.push("planning", "role/parent default", "disabled");
+		ctx.editors.push("");
+		ctx.confirmations.push(true);
+
+		await runAgentOverride(ctx, path);
+
+		expect(loadCustomAgentConfig(path).overrides).toEqual({
+			planning: { disabled: true },
+		});
+		expect(ctx.reloads).toBe(1);
+	});
+
+	test("custom edit clears runtime model and thinking overrides", async () => {
+		const path = configPath();
+		writeCustomAgentConfig(
+			{
+				overrides: {
+					custom: { model: "override/model", thinking: "high", disabled: true },
+				},
+				agents: {
+					custom: {
+						role: "review",
+						description: "Old",
+						prompt: "Old",
+					},
+				},
+			},
+			path,
+		);
+		const ctx = new FakeContext();
+		ctx.selections.push("custom [disabled]", "review", "medium", "disabled");
+		ctx.editors.push("New", "New prompt", "definition/model");
+		ctx.confirmations.push(true);
+
+		await runAgentEdit(ctx, path);
+
+		const config = loadCustomAgentConfig(path);
+		expect(config.agents.custom).toMatchObject({
+			model: "definition/model",
+			thinking: "medium",
+		});
+		expect(config.overrides).toEqual({ custom: { disabled: true } });
+	});
+
+	test("clones explicit fields without source overrides", async () => {
+		const path = configPath();
+		writeCustomAgentConfig(
+			{
+				overrides: { source: { model: "override/model", disabled: true } },
+				agents: {
+					source: {
+						role: "implementation",
+						description: "Source",
+						prompt: "Source prompt",
+						model: "definition/model",
+						thinking: "high",
+					},
+				},
+			},
+			path,
+		);
+		const ctx = new FakeContext();
+		ctx.selections.push("source [disabled]", "implementation", "high");
+		ctx.inputs.push("clone");
+		ctx.editors.push("Source", "Source prompt", "definition/model");
+		ctx.confirmations.push(true);
+
+		await runAgentClone(ctx, path);
+
+		expect(loadCustomAgentConfig(path).agents.clone).toEqual({
+			role: "implementation",
+			description: "Source",
+			prompt: "Source prompt",
+			model: "definition/model",
+			thinking: "high",
+		});
+		expect(loadCustomAgentConfig(path).overrides?.clone).toBeUndefined();
+	});
+
+	test("requires changing a built-in role prompt before cloning", async () => {
+		const path = configPath();
+		writeCustomAgentConfig({ agents: {} }, path);
+		const copiedPrompt = readFileSync(ROLES.review.promptPath, "utf8").trim();
+		const ctx = new FakeContext();
+		ctx.selections.push("review", "review", "role/parent default");
+		ctx.inputs.push("review-copy");
+		ctx.editors.push(
+			ROLES.review.description,
+			copiedPrompt,
+			"Focus on API compatibility.",
+			"",
+		);
+		ctx.confirmations.push(true);
+
+		await runAgentClone(ctx, path);
+
+		expect(loadCustomAgentConfig(path).agents["review-copy"]?.prompt).toBe(
+			"Focus on API compatibility.",
+		);
+		expect(ctx.notifications.map(({ message }) => message)).toContain(
+			"Modify the copied role prompt to avoid running it twice.",
+		);
+	});
+
+	test("reports built-in clone prompt read failures without saving", async () => {
+		const path = configPath();
+		writeCustomAgentConfig({ agents: {} }, path);
+		const before = readFileSync(path, "utf8");
+		const ctx = new FakeContext();
+		ctx.selections.push("review");
+		ctx.inputs.push("review-copy");
+
+		await runAgentClone(ctx, path, () => {
+			throw new Error("unreadable");
+		});
+
+		expect(readFileSync(path, "utf8")).toBe(before);
+		expect(ctx.notifications.at(-1)).toMatchObject({
+			message: expect.stringContaining("unreadable"),
+			type: "error",
+		});
+		expect(ctx.reloads).toBe(0);
+	});
+
+	test("lists all agents and marks disabled entries", async () => {
+		const path = configPath();
+		writeCustomAgentConfig(
+			{
+				overrides: { planning: { disabled: true } },
+				agents: {
+					custom: {
+						role: "review",
+						description: "Custom reviewer.",
+						prompt: "Review.",
+					},
+				},
+			},
+			path,
+		);
+		const ctx = new FakeContext();
+
+		await runAgentList(ctx, path);
+
+		const output = ctx.notifications.at(-1)?.message;
+		expect(output).toContain("planning [disabled] (planning)");
+		expect(output).toContain("custom (review) — Custom reviewer.");
 	});
 
 	test("removes the final agent but keeps an empty config", async () => {
@@ -195,11 +351,18 @@ describe("delegated agent commands", () => {
 		expect(ctx.reloads).toBe(0);
 	});
 
-	test("registers all three slash commands", () => {
+	test("registers subagent slash commands without legacy aliases", () => {
 		const names: string[] = [];
 		registerAgentCommands({
 			registerCommand: (name: string) => names.push(name),
 		} as unknown as ExtensionAPI);
-		expect(names).toEqual(["agent-add", "agent-edit", "agent-remove"]);
+		expect(names).toEqual([
+			"subagent-add",
+			"subagent-edit",
+			"subagent-remove",
+			"subagent-override",
+			"subagent-clone",
+			"subagent-list",
+		]);
 	});
 });

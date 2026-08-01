@@ -51,6 +51,9 @@ Define custom agents in `${PI_CODING_AGENT_DIR}/pi-delegated-agents.json`. When
 ```json
 {
   "overrides": {
+    "planning": {
+      "disabled": true
+    },
     "explore-shallow": {
       "model": "openai-codex/gpt-5.6-luna",
       "thinking": "low"
@@ -78,12 +81,14 @@ and then the parent session. Explore roles ship with the defaults shown above;
 the original four roles inherit the parent. Custom agents based on an explore
 role inherit its shipped defaults when omitted.
 
-The optional top-level `overrides` object changes `model` and/or `thinking` for
-named built-ins. It accepts all six built-in names but cannot replace prompts,
-descriptions, names, or roles. A built-in override does not affect custom agents
-using that role. Delete an override field to restore its shipped or parent
-fallback. Thinking may be `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or
-`max`.
+The optional top-level `overrides` object changes `model`, `thinking`, and/or
+`disabled` for any built-in or configured agent. Overrides cannot replace
+prompts, descriptions, names, or roles. A built-in override does not affect
+custom agents using that role. Delete an override field to restore its agent,
+shipped, or parent fallback. Disabled agents remain configurable but disappear
+from the `delegate_agent` catalog. When every agent is disabled, the extension
+does not register `delegate_agent`. Thinking may be `off`, `minimal`, `low`,
+`medium`, `high`, `xhigh`, or `max`.
 
 The built-in role prompt always runs before the custom prompt. Custom agents
 cannot replace role policy or configure tools, extensions, or skills. Children
@@ -94,11 +99,23 @@ extension does not read or migrate `pi-explore-subagents.json`.
 
 ## Commands
 
-- `/agent-add` creates a custom agent.
-- `/agent-edit` edits an existing custom agent; names are immutable.
-- `/agent-remove` removes a custom agent after confirmation.
+- `/subagent-add` creates a custom agent.
+- `/subagent-edit` edits an existing custom agent, including enabled status;
+  names are immutable. Saving clears model/thinking runtime overrides for that
+  agent so the edited definition becomes authoritative.
+- `/subagent-remove` removes a custom agent and its override after confirmation.
+- `/subagent-override` selects any agent and changes its runtime model, thinking,
+  or enabled status without changing its definition.
+- `/subagent-clone` copies any agent into a new custom agent using the source's
+  explicit definition values, not its runtime overrides. Clones always start
+  enabled. Built-in role prompt text is prefilled as the specialization and must
+  be changed before saving to avoid executing the same prompt twice.
+- `/subagent-list` lists every built-in and custom agent.
+
+Disabled agents include a `[disabled]` marker in list, edit, override, clone,
+and remove views.
 
 Each command keeps changes in memory until final confirmation, writes the JSON
 atomically, then reloads Pi. Escape cancels without changing the file. Built-in
-agents cannot be edited or removed; edit their JSON `overrides` directly. The
-commands preserve existing overrides.
+agents cannot be edited or removed; use `/subagent-override` for their runtime
+settings or `/subagent-clone` to create an editable copy.

@@ -20,9 +20,10 @@ export interface RoleSpec {
 	thinking?: ModelThinkingLevel;
 }
 
-export interface BuiltinAgentOverride {
+export interface AgentOverride {
 	model?: string;
 	thinking?: ModelThinkingLevel;
+	disabled?: boolean;
 }
 
 export interface CustomAgentConfig {
@@ -41,6 +42,7 @@ export interface AgentSpec {
 	specializationPrompt?: string;
 	model?: string;
 	thinking?: ModelThinkingLevel;
+	disabled: boolean;
 	source: "builtin" | "config";
 }
 

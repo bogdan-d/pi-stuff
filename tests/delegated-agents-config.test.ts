@@ -4,6 +4,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
 	createAgentCatalog,
 	getAgentNames,
+	getEnabledAgentCatalog,
 } from "../extensions/delegated-agents/agents.js";
 import { parseCustomAgentConfig } from "../extensions/delegated-agents/config.js";
 import {
@@ -127,22 +128,99 @@ describe("delegated agent config", () => {
 		});
 	});
 
+	test("applies custom overrides and filters disabled agents", () => {
+		const config = parseCustomAgentConfig(
+			{
+				overrides: {
+					planning: { disabled: true },
+					custom: { model: "override/model", disabled: false },
+				},
+				agents: {
+					custom: {
+						role: "review",
+						description: "Custom reviewer.",
+						prompt: "Review it.",
+						model: "definition/model",
+					},
+				},
+			},
+			source,
+		);
+		const catalog = createAgentCatalog(config);
+
+		expect(catalog.get("planning")?.disabled).toBe(true);
+		expect(catalog.get("custom")).toMatchObject({
+			model: "override/model",
+			disabled: false,
+		});
+		expect(getAgentNames(getEnabledAgentCatalog(catalog))).not.toContain(
+			"planning",
+		);
+	});
+
+	test("supports disabling the entire delegation catalog", () => {
+		const overrides = Object.fromEntries(
+			[
+				"planning",
+				"implementation",
+				"verification",
+				"review",
+				"explore-shallow",
+				"explore-deep",
+			].map((name) => [name, { disabled: true }]),
+		);
+		const catalog = createAgentCatalog(
+			parseCustomAgentConfig({ agents: {}, overrides }, source),
+		);
+
+		expect(getEnabledAgentCatalog(catalog).size).toBe(0);
+	});
+
+	test("handles inherited-key agent names as own properties", () => {
+		const config = parseCustomAgentConfig(
+			JSON.parse(`{
+				"agents": {
+					"constructor": { "role": "review", "description": "A", "prompt": "A" }
+				},
+				"overrides": {
+					"constructor": { "disabled": true }
+				}
+			}`),
+			source,
+		);
+
+		expect(Object.hasOwn(config.agents, "constructor")).toBe(true);
+		expect(Object.hasOwn(config.overrides!, "constructor")).toBe(true);
+		expect(config.overrides?.constructor).toEqual({ disabled: true });
+	});
+
+	test("rejects prototype-key overrides without matching agents", () => {
+		for (const name of ["constructor", "__proto__"]) {
+			const value = JSON.parse(
+				`{"agents":{},"overrides":{"${name}":{"disabled":true}}}`,
+			);
+			expect(() => parseCustomAgentConfig(value, source)).toThrow(
+				"expected an existing agent name",
+			);
+		}
+	});
+
 	test.each([
 		[{ overrides: [], agents: {} }, "overrides", "expected object"],
 		[
 			{ overrides: { unknown: { model: "x" } }, agents: {} },
 			"overrides.unknown",
-			"expected planning|implementation",
+			"expected an existing agent name",
 		],
 		[
 			{ overrides: { review: {} }, agents: {} },
 			"overrides.review",
-			"expected model and/or thinking",
+			"expected model, thinking, and/or disabled",
 		],
 		[
 			{ overrides: { review: { model: undefined } }, agents: {} },
 			"overrides.review",
-			"expected model and/or thinking",
+			"expected model, thinking, and/or disabled",
 		],
 		[
 			{ overrides: { review: { model: " " } }, agents: {} },
@@ -158,6 +236,11 @@ describe("delegated agent config", () => {
 			{ overrides: { review: { prompt: "replace" } }, agents: {} },
 			"overrides.review.prompt",
 			"unknown field",
+		],
+		[
+			{ overrides: { review: { disabled: "yes" } }, agents: {} },
+			"overrides.review.disabled",
+			"expected boolean",
 		],
 	] as const)(
 		"rejects invalid built-in overrides %#",
