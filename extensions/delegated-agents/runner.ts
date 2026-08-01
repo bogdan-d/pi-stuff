@@ -16,6 +16,16 @@ import type { AgentSpec, ChildRunDetails } from "./types.js";
 export const CHILD_ENV = "PI_DELEGATED_AGENT_CHILD";
 const RUN_TIMEOUT_MS = 30 * 60 * 1_000;
 
+export class DelegatedAgentRunError extends Error {
+	readonly details: ChildRunDetails;
+
+	constructor(message: string, details: ChildRunDetails, cause: unknown) {
+		super(message, { cause });
+		this.name = "DelegatedAgentRunError";
+		this.details = details;
+	}
+}
+
 function emptyUsage(): Usage {
 	return {
 		input: 0,
@@ -80,7 +90,7 @@ export function buildChildArgs(
 	return args;
 }
 
-export async function runDelegatedAgent(options: {
+export interface RunDelegatedAgentOptions {
 	spec: AgentSpec;
 	task: string;
 	cwd: string;
@@ -88,7 +98,11 @@ export async function runDelegatedAgent(options: {
 	thinking?: ModelThinkingLevel;
 	signal?: AbortSignal;
 	onUpdate?: AgentToolUpdateCallback<ChildRunDetails>;
-}): Promise<ChildRunDetails> {
+}
+
+export async function runDelegatedAgent(
+	options: RunDelegatedAgentOptions,
+): Promise<ChildRunDetails> {
 	const details: ChildRunDetails = {
 		agent: options.spec.name,
 		role: options.spec.role,
@@ -134,6 +148,7 @@ export async function runDelegatedAgent(options: {
 		void client.abort().catch(() => undefined);
 	};
 
+	let failure: unknown;
 	try {
 		if (options.signal?.aborted) throw new Error("Delegated agent aborted.");
 		await client.start();
@@ -143,15 +158,29 @@ export async function runDelegatedAgent(options: {
 		await client.setAutoRetry(true);
 		await client.promptAndWait(prompt, undefined, RUN_TIMEOUT_MS);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		const stderr = client.getStderr().trim();
-		if (!stderr || message.includes(stderr)) throw error;
-		throw new Error(`${message}\nStderr: ${stderr}`, { cause: error });
+		failure = error;
 	} finally {
 		details.stderr = client.getStderr();
 		options.signal?.removeEventListener("abort", abort);
 		removeEventListener();
-		await client.stop();
+		try {
+			await client.stop();
+		} catch (error) {
+			failure ??= error;
+		}
+	}
+
+	if (failure) {
+		const message =
+			failure instanceof Error ? failure.message : String(failure);
+		const stderr = details.stderr.trim();
+		const fullMessage =
+			stderr && !message.includes(stderr)
+				? `${message}\nStderr: ${stderr}`
+				: message;
+		details.stopReason = options.signal?.aborted ? "aborted" : "error";
+		details.errorMessage = fullMessage;
+		throw new DelegatedAgentRunError(fullMessage, details, failure);
 	}
 
 	return details;

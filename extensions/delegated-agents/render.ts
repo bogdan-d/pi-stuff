@@ -3,6 +3,7 @@ import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { getFinalOutput, getToolCalls } from "./messages.js";
 import { ROLES } from "./roles.js";
 import type {
+	BackgroundLaunchDetails,
 	ChildRunDetails,
 	RenderableRunDetails,
 	RoleName,
@@ -16,6 +17,7 @@ function formatTokens(count: number): string {
 }
 
 function formatUsage(details: RenderableRunDetails): string {
+	if (!("usage" in details)) return "";
 	const { usage } = details;
 	const parts = [
 		usage.input ? `↑${formatTokens(usage.input)}` : "",
@@ -62,6 +64,18 @@ export function renderDelegateResult(
 	task: string,
 ) {
 	const details = result.details;
+	if ("mode" in details && details.mode === "background") {
+		const background = details as BackgroundLaunchDetails;
+		const state = background.status === "queued" ? "Queued" : "Running";
+		const header = `${theme.fg("warning", `… ${state}`)} ${theme.fg("accent", background.agent)} · ${ROLES[background.role].label} ${theme.fg("dim", background.model)} · ${background.id}`;
+		return new Text(
+			options.expanded
+				? `${header}\n${theme.fg("dim", `Use delegate_agent_result with ID ${background.id} to retrieve the result.`)}`
+				: header,
+			0,
+			0,
+		);
+	}
 	const agent = "agent" in details ? details.agent : details.profile;
 	const role: RoleName = "role" in details ? details.role : details.profile;
 	const roleSpec = ROLES[role];

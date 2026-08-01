@@ -1,49 +1,16 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
-import {
-	DEFAULT_MAX_BYTES,
-	DEFAULT_MAX_LINES,
-	defineTool,
-	type ExtensionAPI,
-	formatSize,
-	truncateHead,
-} from "@earendil-works/pi-coding-agent";
+import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { formatAgentCatalog, getAgentNames } from "./agents.js";
-import { getFinalOutput } from "./messages.js";
 import { renderDelegateCall, renderDelegateResult } from "./render.js";
-import { isSubagentFailure, runDelegatedAgent } from "./runner.js";
-import type {
-	AgentCatalog,
-	DelegateRunDetails,
-	PersistedRunDetails,
-} from "./types.js";
+import { finalizeRun, formatRunFailure } from "./results.js";
+import type { DelegatedAgentManager } from "./runs.js";
+import type { AgentCatalog, DelegateRunDetails } from "./types.js";
 
-async function prepareOutput(output: string): Promise<{
-	text: string;
-	truncated: boolean;
-	fullOutputPath?: string;
-}> {
-	const truncation = truncateHead(output, {
-		maxLines: DEFAULT_MAX_LINES,
-		maxBytes: DEFAULT_MAX_BYTES,
-	});
-	if (!truncation.truncated) return { text: output, truncated: false };
-
-	const directory = await mkdtemp(join(tmpdir(), "pi-delegated-agent-"));
-	const fullOutputPath = join(directory, "output.md");
-	await writeFile(fullOutputPath, output, { encoding: "utf8", mode: 0o600 });
-	const notice = `[Output truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Full output: ${fullOutputPath}]`;
-	return {
-		text: `${truncation.content}\n\n${notice}`,
-		truncated: true,
-		fullOutputPath,
-	};
-}
-
-export function createDelegateAgentTool(catalog: AgentCatalog) {
+export function createDelegateAgentTool(
+	catalog: AgentCatalog,
+	manager: DelegatedAgentManager,
+) {
 	const names = getAgentNames(catalog);
 	const catalogText = formatAgentCatalog(catalog);
 	const DelegateParams = Type.Object({
@@ -58,6 +25,17 @@ export function createDelegateAgentTool(catalog: AgentCatalog) {
 				description: "Working directory. Defaults to current cwd.",
 			}),
 		),
+		background: Type.Optional(
+			Type.Boolean({
+				description: "Launch in background and return a run ID immediately.",
+			}),
+		),
+		allowConcurrentWrites: Type.Optional(
+			Type.Boolean({
+				description:
+					"Accept shared-workspace concurrent write risk for this call.",
+			}),
+		),
 	});
 
 	return defineTool<typeof DelegateParams, DelegateRunDetails>({
@@ -70,6 +48,9 @@ export function createDelegateAgentTool(catalog: AgentCatalog) {
 			"delegate_agent: No inherited context; include background, exact objective, scope, constraints, cwd, and expected output.",
 			"delegate_agent: Select agent by name from the catalog in its tool description.",
 			"delegate_agent: Agents share the child runtime's active tools; role restrictions are behavioral instructions, not tool-level enforcement.",
+			"delegate_agent: Parallel calls must be independent; never batch delegated implementation with local mutating tools.",
+			"delegate_agent: Do not duplicate background implementation work. Use allowConcurrentWrites only when overlapping writes are knowingly safe.",
+			"delegate_agent: Keep the run ID returned by an accepted background launch for result retrieval or cancellation.",
 			"delegate_agent: Use planning for concrete implementation plans, not broad discovery.",
 			"delegate_agent: Use implementation for a scoped autonomous code change and focused validation.",
 			"delegate_agent: Use verification for reproducing failures, running checks, and root-cause diagnosis without source edits.",
@@ -77,49 +58,61 @@ export function createDelegateAgentTool(catalog: AgentCatalog) {
 			"delegate_agent: Prefer explore_subagent when available for discovery-only retrieval.",
 		],
 		parameters: DelegateParams,
-		executionMode: "sequential",
+		executionMode: "parallel",
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const spec = catalog.get(params.agent);
 			if (!spec) throw new Error(`Unknown delegated agent: ${params.agent}`);
+			if (params.background && signal?.aborted)
+				throw new Error("Delegated agent launch aborted.");
 			const parentModel = ctx.model
 				? `${ctx.model.provider}/${ctx.model.id}`
 				: undefined;
 			const model = spec.model ?? parentModel;
 			const thinking = spec.thinking ?? ctx.thinkingLevel;
-			const details = await runDelegatedAgent({
+			const run = {
 				spec,
 				task: params.task,
 				cwd: params.cwd ?? ctx.cwd,
 				...(model ? { model } : {}),
 				...(thinking ? { thinking } : {}),
-				...(signal ? { signal } : {}),
-				...(onUpdate ? { onUpdate } : {}),
-			});
-			const finalOutput = getFinalOutput(details.messages) || "(no output)";
-			if (isSubagentFailure(details)) {
-				throw new Error(
-					`Delegated agent ${params.agent} failed: ${details.errorMessage || details.stderr || finalOutput}`,
-				);
+			};
+			if (params.background) {
+				const details = manager.startBackground({
+					run,
+					...(params.allowConcurrentWrites
+						? { allowConcurrentWrites: true }
+						: {}),
+				});
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Started delegated agent in background.\nRun ID: ${details.id}\nAgent: ${details.agent}\nStatus: ${details.status}\nUse delegate_agent_result with this ID to retrieve the result.`,
+						},
+					],
+					details,
+				};
 			}
 
-			const output = await prepareOutput(finalOutput);
-			const persistedDetails: PersistedRunDetails = {
-				agent: details.agent,
-				role: details.role,
-				...(details.description ? { description: details.description } : {}),
-				cwd: details.cwd,
-				model: details.model,
-				...(details.thinking ? { thinking: details.thinking } : {}),
-				usage: details.usage,
-				truncated: output.truncated,
-				...(output.fullOutputPath
-					? { fullOutputPath: output.fullOutputPath }
+			const details = await manager.runForeground({
+				run: {
+					...run,
+					...(signal ? { signal } : {}),
+					...(onUpdate ? { onUpdate } : {}),
+				},
+				...(params.allowConcurrentWrites
+					? { allowConcurrentWrites: true }
 					: {}),
-			};
+			});
+			const finalized = await finalizeRun(details);
+			if (finalized.failed)
+				throw new Error(
+					formatRunFailure(params.agent, finalized.error ?? finalized.output),
+				);
 			return {
-				content: [{ type: "text", text: output.text }],
-				details: persistedDetails,
+				content: [{ type: "text", text: finalized.output }],
+				details: finalized.details,
 				usage: details.usage,
 			};
 		},
@@ -136,6 +129,7 @@ export function createDelegateAgentTool(catalog: AgentCatalog) {
 export function registerDelegateAgentTool(
 	pi: ExtensionAPI,
 	catalog: AgentCatalog,
+	manager: DelegatedAgentManager,
 ): void {
-	pi.registerTool(createDelegateAgentTool(catalog));
+	pi.registerTool(createDelegateAgentTool(catalog, manager));
 }

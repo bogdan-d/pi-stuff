@@ -64,7 +64,44 @@ export interface PersistedRunDetails {
 	fullOutputPath?: string;
 }
 
-export type DelegateRunDetails = ChildRunDetails | PersistedRunDetails;
+export type BackgroundRunStatus =
+	| "queued"
+	| "running"
+	| "completed"
+	| "failed"
+	| "cancelled";
+
+export interface BackgroundRunSummary {
+	id: string;
+	status: BackgroundRunStatus;
+	agent: string;
+	role: RoleName;
+	description?: string;
+	task: string;
+	cwd: string;
+	model: string;
+	thinking?: ModelThinkingLevel;
+	createdAt: number;
+	startedAt?: number;
+	completedAt?: number;
+}
+
+export interface BackgroundLaunchDetails extends BackgroundRunSummary {
+	mode: "background";
+}
+
+export interface BackgroundRunResult extends BackgroundRunSummary {
+	output?: string;
+	error?: string;
+	usage?: Usage;
+	truncated?: boolean;
+	fullOutputPath?: string;
+}
+
+export type DelegateRunDetails =
+	| ChildRunDetails
+	| PersistedRunDetails
+	| BackgroundLaunchDetails;
 
 export interface LegacyRunDetails {
 	profile: RoleName;

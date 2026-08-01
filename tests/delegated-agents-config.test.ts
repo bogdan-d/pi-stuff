@@ -66,7 +66,7 @@ describe("delegated agent config", () => {
 				},
 			}),
 		);
-		const tool = createDelegateAgentTool(catalog);
+		const tool = createDelegateAgentTool(catalog, {} as never);
 
 		expect(tool.parameters.properties.agent.enum).toEqual([
 			"planning",
@@ -77,6 +77,114 @@ describe("delegated agent config", () => {
 		]);
 		expect(tool.description).toContain("custom (review): Reviews custom code.");
 		expect(tool.parameters.properties).not.toHaveProperty("profile");
+		expect(tool.parameters.properties).toHaveProperty("background");
+		expect(tool.parameters.properties).toHaveProperty("allowConcurrentWrites");
+		expect(tool.executionMode).toBe("parallel");
+	});
+
+	test("renders background launch as running work", () => {
+		const theme = {
+			fg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+		} as unknown as Theme;
+		const rendered = renderDelegateResult(
+			{
+				content: [],
+				details: {
+					mode: "background",
+					id: "abc",
+					status: "running",
+					agent: "review",
+					role: "review",
+					task: "task",
+					cwd: "/tmp",
+					model: "model",
+					createdAt: 1,
+				},
+			},
+			{ expanded: true, isPartial: false },
+			theme,
+			"task",
+		)
+			.render(120)
+			.join("\n");
+		expect(rendered).toContain("Running");
+		expect(rendered).not.toContain("Done");
+		expect(rendered).toContain("delegate_agent_result");
+	});
+
+	test("dispatches foreground ownership and detaches background ownership", async () => {
+		const catalog = createAgentCatalog(parse({}));
+		const foregroundCalls: any[] = [];
+		const backgroundCalls: any[] = [];
+		const usage = {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				total: 0,
+			},
+		};
+		const manager = {
+			async runForeground(options: any) {
+				foregroundCalls.push(options);
+				return {
+					agent: "review",
+					role: "review",
+					task: "task",
+					cwd: "/tmp",
+					model: "provider/model",
+					messages: [],
+					stderr: "",
+					usage,
+				};
+			},
+			startBackground(options: any) {
+				backgroundCalls.push(options);
+				return {
+					mode: "background",
+					id: "abc",
+					status: "running",
+					agent: "review",
+					role: "review",
+					task: "task",
+					cwd: "/tmp",
+					model: "provider/model",
+					createdAt: 1,
+				};
+			},
+		};
+		const tool = createDelegateAgentTool(catalog, manager as never);
+		const signal = new AbortController().signal;
+		const onUpdate = () => {};
+		const context = {
+			cwd: "/tmp",
+			model: { provider: "provider", id: "model" },
+		} as any;
+		await tool.execute(
+			"call",
+			{ agent: "review", task: "task" },
+			signal,
+			onUpdate,
+			context,
+		);
+		await tool.execute(
+			"call",
+			{ agent: "review", task: "task", background: true },
+			signal,
+			onUpdate,
+			context,
+		);
+		expect(foregroundCalls[0].run.signal).toBe(signal);
+		expect(foregroundCalls[0].run.onUpdate).toBe(onUpdate);
+		expect(backgroundCalls[0].run).not.toHaveProperty("signal");
+		expect(backgroundCalls[0].run).not.toHaveProperty("onUpdate");
 	});
 
 	test("appends specialization after the role prompt", () => {
