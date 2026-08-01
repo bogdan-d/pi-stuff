@@ -498,12 +498,12 @@ export function registerAgentCommands(pi: ExtensionAPI): void {
 			run: (ctx: AgentCommandContext) => Promise<void>,
 		]
 	> = [
+		["subagent-list", "List all delegated agents", runAgentList],
 		["subagent-add", "Add a custom delegated agent", runAgentAdd],
 		["subagent-edit", "Edit a custom delegated agent", runAgentEdit],
 		["subagent-remove", "Remove a custom delegated agent", runAgentRemove],
 		["subagent-override", "Override any delegated agent", runAgentOverride],
 		["subagent-clone", "Clone any delegated agent", runAgentClone],
-		["subagent-list", "List all delegated agents", runAgentList],
 	];
 	for (const [name, description, run] of commands) {
 		pi.registerCommand(name, {

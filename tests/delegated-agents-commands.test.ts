@@ -412,12 +412,12 @@ describe("delegated agent commands", () => {
 			registerCommand: (name: string) => names.push(name),
 		} as unknown as ExtensionAPI);
 		expect(names).toEqual([
+			"subagent-list",
 			"subagent-add",
 			"subagent-edit",
 			"subagent-remove",
 			"subagent-override",
 			"subagent-clone",
-			"subagent-list",
 		]);
 	});
 });
