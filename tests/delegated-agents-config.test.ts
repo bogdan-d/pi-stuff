@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
 	createAgentCatalog,
@@ -47,6 +48,8 @@ describe("delegated agent config", () => {
 			"implementation",
 			"verification",
 			"review",
+			"explore-shallow",
+			"explore-deep",
 			"a-implementer",
 			"z-reviewer",
 		]);
@@ -73,6 +76,8 @@ describe("delegated agent config", () => {
 			"implementation",
 			"verification",
 			"review",
+			"explore-shallow",
+			"explore-deep",
 			"custom",
 		]);
 		expect(tool.description).toContain("custom (review): Reviews custom code.");
@@ -80,7 +85,87 @@ describe("delegated agent config", () => {
 		expect(tool.parameters.properties).toHaveProperty("background");
 		expect(tool.parameters.properties).toHaveProperty("allowConcurrentWrites");
 		expect(tool.executionMode).toBe("parallel");
+		expect(tool.promptGuidelines?.join("\n")).toContain("explore-shallow");
+		expect(tool.promptGuidelines?.join("\n")).toContain("explore-deep");
+		expect(tool.promptGuidelines?.join("\n")).not.toContain("explore_subagent");
 	});
+
+	test("applies built-in overrides and explore role defaults", () => {
+		const config = parseCustomAgentConfig(
+			{
+				overrides: {
+					planning: { model: "custom/planner" },
+					"explore-deep": { thinking: "high" },
+				},
+				agents: {
+					"domain-explorer": {
+						role: "explore-deep",
+						description: "Maps one domain.",
+						prompt: "Focus on protocol boundaries.",
+					},
+				},
+			},
+			source,
+		);
+		const catalog = createAgentCatalog(config);
+
+		expect(catalog.get("planning")).toMatchObject({
+			model: "custom/planner",
+		});
+		expect(catalog.get("explore-shallow")).toMatchObject({
+			model: "openai-codex/gpt-5.6-luna",
+			thinking: "low",
+		});
+		expect(catalog.get("explore-deep")).toMatchObject({
+			model: "openai-codex/gpt-5.6-terra",
+			thinking: "high",
+		});
+		expect(catalog.get("domain-explorer")).toMatchObject({
+			role: "explore-deep",
+			model: "openai-codex/gpt-5.6-terra",
+			thinking: "low",
+		});
+	});
+
+	test.each([
+		[{ overrides: [], agents: {} }, "overrides", "expected object"],
+		[
+			{ overrides: { unknown: { model: "x" } }, agents: {} },
+			"overrides.unknown",
+			"expected planning|implementation",
+		],
+		[
+			{ overrides: { review: {} }, agents: {} },
+			"overrides.review",
+			"expected model and/or thinking",
+		],
+		[
+			{ overrides: { review: { model: undefined } }, agents: {} },
+			"overrides.review",
+			"expected model and/or thinking",
+		],
+		[
+			{ overrides: { review: { model: " " } }, agents: {} },
+			"overrides.review.model",
+			"non-empty string",
+		],
+		[
+			{ overrides: { review: { thinking: "huge" } }, agents: {} },
+			"overrides.review.thinking",
+			"expected off|minimal|low|medium|high|xhigh|max",
+		],
+		[
+			{ overrides: { review: { prompt: "replace" } }, agents: {} },
+			"overrides.review.prompt",
+			"unknown field",
+		],
+	] as const)(
+		"rejects invalid built-in overrides %#",
+		(value, path, message) => {
+			expect(() => parseCustomAgentConfig(value, source)).toThrow(path);
+			expect(() => parseCustomAgentConfig(value, source)).toThrow(message);
+		},
+	);
 
 	test("renders background launch as running work", () => {
 		const theme = {
@@ -227,6 +312,24 @@ describe("delegated agent config", () => {
 		]);
 	});
 
+	test("uses the ported discovery prompts", () => {
+		const catalog = createAgentCatalog(parse({}));
+		const shallow = catalog.get("explore-shallow");
+		const deep = catalog.get("explore-deep");
+		expect(shallow).toBeDefined();
+		expect(deep).toBeDefined();
+		if (!shallow || !deep) throw new Error("explore agents missing");
+
+		const shallowPrompt = readFileSync(shallow.rolePromptPath, "utf8");
+		const deepPrompt = readFileSync(deep.rolePromptPath, "utf8");
+		expect(shallowPrompt).toContain("# Shallow Summary");
+		expect(shallowPrompt).toContain("Do not invoke further subagents");
+		expect(deepPrompt).toContain("# Deep Summary");
+		expect(deepPrompt).toContain("Follow key relationships through callers");
+		expect(buildChildArgs(shallow, shallow.thinking)).toContain("--no-session");
+		expect(buildChildArgs(deep, deep.thinking)).toContain("--no-skills");
+	});
+
 	test("renders historical profile calls and results", () => {
 		const theme = {
 			fg: (_color: string, text: string) => text,
@@ -300,7 +403,7 @@ describe("delegated agent config", () => {
 			"custom",
 			{ role: "unknown", description: "x", prompt: "x" },
 			"agents.custom.role",
-			"expected planning|implementation|verification|review",
+			"expected planning|implementation|verification|review|explore-shallow|explore-deep",
 		],
 		[
 			"custom",

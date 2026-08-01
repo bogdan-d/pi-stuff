@@ -25,6 +25,13 @@ const specs = {
 		rolePromptPath: "/implementation",
 		source: "builtin",
 	},
+	"explore-deep": {
+		name: "explore-deep",
+		role: "explore-deep",
+		description: "Explore deeply",
+		rolePromptPath: "/explore-deep",
+		source: "builtin",
+	},
 } as const;
 
 function deferred<T>() {
@@ -82,6 +89,24 @@ const finalize = async (details: any) => ({
 });
 
 describe("DelegatedAgentManager", () => {
+	test("runs explore agents through the shared background lifecycle", async () => {
+		const manager = new DelegatedAgentManager({
+			run: async () => child("explore-deep"),
+			finalize,
+			createId: () => "explore",
+		});
+		const run = start(manager, "explore-deep");
+		expect(await manager.waitFor(run.id)).toMatchObject({
+			status: "completed",
+			agent: "explore-deep",
+			role: "explore-deep",
+		});
+		expect(manager.history.get(run.id)).toMatchObject({
+			status: "completed",
+			agent: "explore-deep",
+		});
+	});
+
 	test("runs four, queues FIFO, and frees slots after failure", async () => {
 		const jobs = Array.from({ length: 6 }, () => deferred<any>());
 		let called = 0;

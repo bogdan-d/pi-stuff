@@ -1,4 +1,5 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import { ROLE_NAMES } from "./roles.js";
 import type {
 	AgentRunSnapshot,
 	AgentToolTimelineEvent,
@@ -49,7 +50,7 @@ function isSnapshot(value: unknown): value is AgentRunSnapshot {
 		typeof run.agent === "string" &&
 		run.agent.length > 0 &&
 		!!run.role &&
-		ROLES.has(run.role) &&
+		ROLE_SET.has(run.role) &&
 		typeof run.task === "string" &&
 		typeof run.cwd === "string" &&
 		typeof run.model === "string" &&
@@ -75,12 +76,7 @@ function isSnapshot(value: unknown): value is AgentRunSnapshot {
 	);
 }
 
-const ROLES = new Set<RoleName>([
-	"planning",
-	"implementation",
-	"verification",
-	"review",
-]);
+const ROLE_SET = new Set<RoleName>(ROLE_NAMES);
 
 function isUsage(usage: AgentRunSnapshot["usage"]): boolean {
 	if (usage === undefined) return true;
@@ -299,7 +295,7 @@ export class AgentRunHistory {
 			const details = message.details as Record<string, unknown> | undefined;
 			if (!details) continue;
 			const role = details["role"] ?? details["profile"];
-			if (typeof role !== "string" || !ROLES.has(role as RoleName)) continue;
+			if (typeof role !== "string" || !ROLE_SET.has(role as RoleName)) continue;
 			const id =
 				typeof details["id"] === "string"
 					? details["id"]

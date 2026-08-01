@@ -8,12 +8,21 @@ export type RoleName =
 	| "planning"
 	| "implementation"
 	| "verification"
-	| "review";
+	| "review"
+	| "explore-shallow"
+	| "explore-deep";
 
 export interface RoleSpec {
 	label: string;
 	description: string;
 	promptPath: string;
+	model?: string;
+	thinking?: ModelThinkingLevel;
+}
+
+export interface BuiltinAgentOverride {
+	model?: string;
+	thinking?: ModelThinkingLevel;
 }
 
 export interface CustomAgentConfig {

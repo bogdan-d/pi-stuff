@@ -15,7 +15,7 @@ import {
 import { ROLE_NAMES } from "./roles.js";
 import type { CustomAgentConfig, RoleName } from "./types.js";
 
-const INHERIT = "inherit";
+const DEFAULT = "role/parent default";
 
 export interface AgentCommandContext {
 	hasUI: boolean;
@@ -70,13 +70,13 @@ async function selectThinking(
 	{ cancelled: true } | { cancelled: false; value?: ModelThinkingLevel }
 > {
 	const selected = await ctx.ui.select("Thinking", [
-		current ?? INHERIT,
-		...[INHERIT, ...THINKING_LEVELS].filter(
-			(value) => value !== (current ?? INHERIT),
+		current ?? DEFAULT,
+		...[DEFAULT, ...THINKING_LEVELS].filter(
+			(value) => value !== (current ?? DEFAULT),
 		),
 	]);
 	if (selected === undefined) return { cancelled: true };
-	return selected === INHERIT
+	return selected === DEFAULT
 		? { cancelled: false }
 		: { cancelled: false, value: selected as ModelThinkingLevel };
 }
@@ -104,7 +104,7 @@ async function promptAgent(
 	if (prompt === undefined) return undefined;
 	const model = await optionalEditor(
 		ctx,
-		"Model (blank = inherit)",
+		"Model (blank = role/parent default)",
 		current?.model,
 	);
 	if (model.cancelled) return undefined;
@@ -125,8 +125,8 @@ function formatAgent(name: string, agent: CustomAgentConfig): string {
 		`Name: ${name}`,
 		`Role: ${agent.role}`,
 		`Description: ${agent.description}`,
-		`Model: ${agent.model ?? INHERIT}`,
-		`Thinking: ${agent.thinking ?? INHERIT}`,
+		`Model: ${agent.model ?? DEFAULT}`,
+		`Thinking: ${agent.thinking ?? DEFAULT}`,
 		"",
 		"Specialization prompt:",
 		agent.prompt,
@@ -208,7 +208,7 @@ export async function runAgentAdd(
 	if (!(await ctx.ui.confirm("Add agent?", formatAgent(name, agent)))) return;
 	await saveAndReload(
 		ctx,
-		{ agents: { ...config.agents, [name]: agent } },
+		{ ...config, agents: { ...config.agents, [name]: agent } },
 		configPath,
 		`Added agent ${name}.`,
 	);
@@ -238,7 +238,7 @@ export async function runAgentEdit(
 	if (!(await ctx.ui.confirm("Save agent?", formatAgent(name, agent)))) return;
 	await saveAndReload(
 		ctx,
-		{ agents: { ...config.agents, [name]: agent } },
+		{ ...config, agents: { ...config.agents, [name]: agent } },
 		configPath,
 		`Updated agent ${name}.`,
 	);
@@ -270,7 +270,12 @@ export async function runAgentRemove(
 
 	const agents = { ...config.agents };
 	delete agents[name];
-	await saveAndReload(ctx, { agents }, configPath, `Removed agent ${name}.`);
+	await saveAndReload(
+		ctx,
+		{ ...config, agents },
+		configPath,
+		`Removed agent ${name}.`,
+	);
 }
 
 export function registerAgentCommands(pi: ExtensionAPI): void {

@@ -95,6 +95,10 @@ describe("delegated agent commands", () => {
 		const path = configPath();
 		writeCustomAgentConfig(
 			{
+				overrides: {
+					planning: { thinking: "high" },
+					"explore-deep": { model: "custom/deep", thinking: "medium" },
+				},
 				agents: {
 					rust: {
 						role: "implementation",
@@ -108,7 +112,7 @@ describe("delegated agent commands", () => {
 			path,
 		);
 		const ctx = new FakeContext();
-		ctx.selections.push("rust", "review", "inherit");
+		ctx.selections.push("rust", "review", "role/parent default");
 		ctx.editors.push("New description", "New prompt", "");
 		ctx.confirmations.push(true);
 
@@ -119,6 +123,14 @@ describe("delegated agent commands", () => {
 			description: "New description",
 			prompt: "New prompt",
 		});
+		expect(loadCustomAgentConfig(path).overrides).toEqual({
+			"explore-deep": { model: "custom/deep", thinking: "medium" },
+			planning: { thinking: "high" },
+		});
+		const written = readFileSync(path, "utf8");
+		expect(written.indexOf('"explore-deep"')).toBeLessThan(
+			written.indexOf('"planning"'),
+		);
 		expect(ctx.reloads).toBe(1);
 	});
 

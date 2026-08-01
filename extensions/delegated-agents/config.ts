@@ -9,7 +9,11 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { ROLE_NAMES } from "./roles.js";
-import type { CustomAgentConfig, RoleName } from "./types.js";
+import type {
+	BuiltinAgentOverride,
+	CustomAgentConfig,
+	RoleName,
+} from "./types.js";
 
 export const CONFIG_FILENAME = "pi-delegated-agents.json";
 
@@ -21,6 +25,7 @@ const ENTRY_FIELDS = new Set([
 	"model",
 	"thinking",
 ]);
+const OVERRIDE_FIELDS = new Set(["model", "thinking"]);
 const ROLE_SET = new Set<string>(ROLE_NAMES);
 export const THINKING_LEVELS = [
 	"off",
@@ -35,6 +40,7 @@ const THINKING_SET = new Set<string>(THINKING_LEVELS);
 
 export interface CustomAgentsConfig {
 	agents: Record<string, CustomAgentConfig>;
+	overrides?: Partial<Record<RoleName, BuiltinAgentOverride>>;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -66,10 +72,53 @@ export function parseCustomAgentConfig(
 ): CustomAgentsConfig {
 	if (!record(value)) invalid(sourcePath, "$", "expected object");
 	for (const field of Object.keys(value)) {
-		if (field !== "agents") invalid(sourcePath, field, "unknown field");
+		if (field !== "agents" && field !== "overrides")
+			invalid(sourcePath, field, "unknown field");
 	}
 	if (!("agents" in value) || !record(value["agents"])) {
 		invalid(sourcePath, "agents", "expected object");
+	}
+
+	let overrides: Partial<Record<RoleName, BuiltinAgentOverride>> | undefined;
+	if ("overrides" in value) {
+		if (!record(value["overrides"])) {
+			invalid(sourcePath, "overrides", "expected object");
+		}
+		overrides = {};
+		for (const [name, raw] of Object.entries(value["overrides"])) {
+			const base = `overrides.${name}`;
+			if (!ROLE_SET.has(name)) {
+				invalid(sourcePath, base, `expected ${ROLE_NAMES.join("|")}`);
+			}
+			if (!record(raw)) invalid(sourcePath, base, "expected object");
+			for (const field of Object.keys(raw)) {
+				if (!OVERRIDE_FIELDS.has(field)) {
+					invalid(sourcePath, `${base}.${field}`, "unknown field");
+				}
+			}
+			const model =
+				raw["model"] === undefined
+					? undefined
+					: requiredString(raw["model"], sourcePath, `${base}.model`);
+			const thinking = raw["thinking"];
+			if (
+				thinking !== undefined &&
+				(typeof thinking !== "string" || !THINKING_SET.has(thinking))
+			) {
+				invalid(
+					sourcePath,
+					`${base}.thinking`,
+					`expected ${THINKING_LEVELS.join("|")}`,
+				);
+			}
+			if (!model && thinking === undefined) {
+				invalid(sourcePath, base, "expected model and/or thinking");
+			}
+			overrides[name as RoleName] = {
+				...(model ? { model } : {}),
+				...(thinking ? { thinking: thinking as ModelThinkingLevel } : {}),
+			};
+		}
 	}
 
 	const agents: Record<string, CustomAgentConfig> = {};
@@ -122,7 +171,7 @@ export function parseCustomAgentConfig(
 				: {}),
 		};
 	}
-	return { agents };
+	return { ...(overrides ? { overrides } : {}), agents };
 }
 
 export function getAgentDirectory(): string {
@@ -166,6 +215,15 @@ export function writeCustomAgentConfig(
 ): void {
 	const normalized = parseCustomAgentConfig(config, configPath);
 	const sorted: CustomAgentsConfig = {
+		...(normalized.overrides
+			? {
+					overrides: Object.fromEntries(
+						Object.entries(normalized.overrides).sort(([left], [right]) =>
+							left.localeCompare(right),
+						),
+					) as Partial<Record<RoleName, BuiltinAgentOverride>>,
+				}
+			: {}),
 		agents: Object.fromEntries(
 			Object.entries(normalized.agents).sort(([left], [right]) =>
 				left.localeCompare(right),

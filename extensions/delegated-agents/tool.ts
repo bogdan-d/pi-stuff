@@ -43,7 +43,7 @@ export function createDelegateAgentTool(
 		label: "Delegate Agent",
 		description: `Delegate a standalone task to an isolated built-in or configured Pi agent using its model-selected active tools.\n\nAvailable agents:\n${catalogText}`,
 		promptSnippet:
-			"Delegate isolated planning, implementation, verification, or review work",
+			"Delegate isolated exploration, planning, implementation, verification, or review work",
 		promptGuidelines: [
 			"delegate_agent: No inherited context; include background, exact objective, scope, constraints, cwd, and expected output.",
 			"delegate_agent: Select agent by name from the catalog in its tool description.",
@@ -55,7 +55,9 @@ export function createDelegateAgentTool(
 			"delegate_agent: Use implementation for a scoped autonomous code change and focused validation.",
 			"delegate_agent: Use verification for reproducing failures, running checks, and root-cause diagnosis without source edits.",
 			"delegate_agent: Use review for actionable code-review findings without edits.",
-			"delegate_agent: Prefer explore_subagent when available for discovery-only retrieval.",
+			"delegate_agent: Use explore-shallow for narrow, bounded discovery of hotspots, entry points, and best next reads.",
+			"delegate_agent: Use explore-deep for broad, open-ended, triage, compare/rank, or revisit-heavy discovery.",
+			"delegate_agent: Explore agents receive no inherited context; include background, exact question, scope, constraints, cwd, and desired evidence.",
 		],
 		parameters: DelegateParams,
 		executionMode: "parallel",

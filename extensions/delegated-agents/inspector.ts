@@ -238,7 +238,7 @@ export class AgentInspectorComponent implements Focusable {
 			const selected = run.id === this.#selectedId ? ">" : " ";
 			const inherited = run.inherited ? " inherited" : "";
 			lines.push(
-				`${selected} ${this.#displayStatus(run).padEnd(11)} ${run.agent.padEnd(14).slice(0, 14)} ${run.mode === "foreground" ? "fg" : "bg"} ${elapsed(run)} ${run.task.replaceAll(/\s+/g, " ")}${inherited}`,
+				`${selected} ${this.#displayStatus(run).padEnd(11)} ${run.agent.padEnd(15).slice(0, 15)} ${run.mode === "foreground" ? "fg" : "bg"} ${elapsed(run)} ${run.task.replaceAll(/\s+/g, " ")}${inherited}`,
 			);
 		}
 		if (this.#view === "confirm")

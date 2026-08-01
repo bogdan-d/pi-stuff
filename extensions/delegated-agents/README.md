@@ -1,7 +1,15 @@
 # Delegated agents
 
-`delegate_agent` provides four built-in agents (`planning`, `implementation`,
-`verification`, and `review`) plus optional named specializations.
+`delegate_agent` provides six built-in agents (`planning`, `implementation`,
+`verification`, `review`, `explore-shallow`, and `explore-deep`) plus optional
+named specializations.
+
+Use `explore-shallow` for bounded reconnaissance: likely hotspots, entry points,
+immediate relationships, and best next reads. Use `explore-deep` for broad
+surveys, triage, compare/rank work, and cross-file synthesis. Both are
+discovery-only by instruction and require a standalone brief because children
+do not inherit parent conversation. Their read-only behavior is prompt-enforced,
+not a filesystem or tool sandbox.
 
 ## Parallel and background runs
 
@@ -42,6 +50,16 @@ Define custom agents in `${PI_CODING_AGENT_DIR}/pi-delegated-agents.json`. When
 
 ```json
 {
+  "overrides": {
+    "explore-shallow": {
+      "model": "openai-codex/gpt-5.6-luna",
+      "thinking": "low"
+    },
+    "explore-deep": {
+      "model": "openai-codex/gpt-5.6-terra",
+      "thinking": "low"
+    }
+  },
   "agents": {
     "rust-implementer": {
       "role": "implementation",
@@ -54,16 +72,25 @@ Define custom agents in `${PI_CODING_AGENT_DIR}/pi-delegated-agents.json`. When
 }
 ```
 
-Each agent requires `role`, `description`, and `prompt`. `role` must name one
-of the four built-ins. Optional `model` and `thinking` override the parent
-session; omitted values inherit it. Thinking may be `off`, `minimal`, `low`,
-`medium`, `high`, `xhigh`, or `max`.
+Each custom agent requires `role`, `description`, and `prompt`. `role` must name
+one of the six built-ins. Optional `model` and `thinking` override role defaults
+and then the parent session. Explore roles ship with the defaults shown above;
+the original four roles inherit the parent. Custom agents based on an explore
+role inherit its shipped defaults when omitted.
+
+The optional top-level `overrides` object changes `model` and/or `thinking` for
+named built-ins. It accepts all six built-in names but cannot replace prompts,
+descriptions, names, or roles. A built-in override does not affect custom agents
+using that role. Delete an override field to restore its shipped or parent
+fallback. Thinking may be `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or
+`max`.
 
 The built-in role prompt always runs before the custom prompt. Custom agents
 cannot replace role policy or configure tools, extensions, or skills. Children
 use the selected model's extension-provided tools, while skills remain disabled.
 
-The file is read when the extension loads. Run `/reload` after editing it.
+The file is read when the extension loads. Run `/reload` after editing it. The
+extension does not read or migrate `pi-explore-subagents.json`.
 
 ## Commands
 
@@ -73,4 +100,5 @@ The file is read when the extension loads. Run `/reload` after editing it.
 
 Each command keeps changes in memory until final confirmation, writes the JSON
 atomically, then reloads Pi. Escape cancels without changing the file. Built-in
-agents cannot be edited or removed.
+agents cannot be edited or removed; edit their JSON `overrides` directly. The
+commands preserve existing overrides.

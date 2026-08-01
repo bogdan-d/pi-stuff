@@ -19,8 +19,8 @@ function historyWithRuns() {
 		id: "active",
 		mode: "background",
 		status: "running",
-		agent: "review",
-		role: "review",
+		agent: "explore-shallow",
+		role: "explore-shallow",
 		task: "Inspect parser",
 		cwd: "/repo",
 		model: "provider/model",
@@ -74,7 +74,9 @@ describe("delegated-agent inspector", () => {
 		component.handleInput("/");
 		for (const char of "parser") component.handleInput(char);
 		component.handleInput("\r");
-		expect(component.render(88).join("\n")).not.toContain("Plan migration");
+		const filtered = component.render(88).join("\n");
+		expect(filtered).not.toContain("Plan migration");
+		expect(filtered).toContain("explore-shallow");
 		component.handleInput("y");
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		expect(copied).toEqual(["active"]);

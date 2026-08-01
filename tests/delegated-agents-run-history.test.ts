@@ -66,6 +66,36 @@ describe("AgentRunHistory", () => {
 		});
 	});
 
+	test("persists and reconstructs explore roles", () => {
+		const terminal: any[] = [];
+		const history = new AgentRunHistory({
+			onTerminal: (run) => terminal.push(run),
+		});
+		history.register({
+			...registration("explore"),
+			agent: "explore-deep",
+			role: "explore-deep",
+		});
+		history.update("explore", { status: "completed", completedAt: 2 });
+
+		const restored = new AgentRunHistory();
+		restored.reconstruct([
+			{
+				type: "custom",
+				id: "entry",
+				parentId: null,
+				timestamp: new Date().toISOString(),
+				customType: RUN_ENTRY_TYPE,
+				data: terminal[0],
+			},
+		]);
+		expect(restored.get("explore")).toMatchObject({
+			agent: "explore-deep",
+			role: "explore-deep",
+			inherited: true,
+		});
+	});
+
 	test("sanitizes lifecycle storage shape and caps timeline", () => {
 		let now = 0;
 		const history = new AgentRunHistory({ now: () => ++now });

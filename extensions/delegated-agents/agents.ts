@@ -6,11 +6,16 @@ export function createAgentCatalog(config: CustomAgentsConfig): AgentCatalog {
 	const catalog = new Map<string, AgentSpec>();
 	for (const role of ROLE_NAMES) {
 		const spec = ROLES[role];
+		const override = config.overrides?.[role];
+		const model = override?.model ?? spec.model;
+		const thinking = override?.thinking ?? spec.thinking;
 		catalog.set(role, {
 			name: role,
 			role,
 			description: spec.description,
 			rolePromptPath: spec.promptPath,
+			...(model ? { model } : {}),
+			...(thinking ? { thinking } : {}),
 			source: "builtin",
 		});
 	}
@@ -18,14 +23,17 @@ export function createAgentCatalog(config: CustomAgentsConfig): AgentCatalog {
 	for (const name of Object.keys(config.agents).sort()) {
 		const custom = config.agents[name];
 		if (!custom) continue;
+		const role = ROLES[custom.role];
+		const model = custom.model ?? role.model;
+		const thinking = custom.thinking ?? role.thinking;
 		catalog.set(name, {
 			name,
 			role: custom.role,
 			description: custom.description,
-			rolePromptPath: ROLES[custom.role].promptPath,
+			rolePromptPath: role.promptPath,
 			specializationPrompt: custom.prompt,
-			...(custom.model ? { model: custom.model } : {}),
-			...(custom.thinking ? { thinking: custom.thinking } : {}),
+			...(model ? { model } : {}),
+			...(thinking ? { thinking } : {}),
 			source: "config",
 		});
 	}

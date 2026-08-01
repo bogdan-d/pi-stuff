@@ -11,6 +11,8 @@ export const ROLE_NAMES = [
 	"implementation",
 	"verification",
 	"review",
+	"explore-shallow",
+	"explore-deep",
 ] as const satisfies readonly RoleName[];
 
 export const ROLES: Record<RoleName, RoleSpec> = {
@@ -35,5 +37,21 @@ export const ROLES: Record<RoleName, RoleSpec> = {
 		label: "Review",
 		description: "Review code or diffs for concrete, actionable defects.",
 		promptPath: promptPath("review"),
+	},
+	"explore-shallow": {
+		label: "Explore / Shallow",
+		description:
+			"Run bounded discovery to find likely hotspots, entry points, and best next reads.",
+		promptPath: promptPath("explore-shallow"),
+		model: "openai-codex/gpt-5.6-luna",
+		thinking: "low",
+	},
+	"explore-deep": {
+		label: "Explore / Deep",
+		description:
+			"Run broad discovery for surveys, triage, cross-file synthesis, or compare/rank work.",
+		promptPath: promptPath("explore-deep"),
+		model: "openai-codex/gpt-5.6-terra",
+		thinking: "low",
 	},
 };
