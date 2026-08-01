@@ -155,6 +155,7 @@ export function runtimeEventFromRpcEvent(event: {
 		id: event.toolCallId,
 		tool: event.toolName,
 		summary: summarizeToolCall(event.toolName, args),
+		args,
 	};
 }
 
@@ -202,6 +203,15 @@ export async function runDelegatedAgent(
 			return;
 		}
 		recordMessage(details, event.message);
+		try {
+			options.onEvent?.({
+				type: "usage",
+				usage: structuredClone(details.usage),
+				model: details.model,
+			});
+		} catch {
+			// Runtime observers cannot own or disrupt the delegated run.
+		}
 		const output = getFinalOutput(details.messages);
 		if (!output && getToolCalls(details.messages).length === 0) return;
 		try {

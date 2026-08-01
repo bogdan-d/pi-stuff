@@ -30,6 +30,7 @@ describe("delegated-agent runtime events", () => {
 			id: "call",
 			tool: "grep",
 			summary: "needle in src",
+			args: { pattern: "needle", path: "src" },
 		});
 		expect(
 			runtimeEventFromRpcEvent({

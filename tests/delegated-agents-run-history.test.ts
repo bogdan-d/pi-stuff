@@ -106,6 +106,7 @@ describe("AgentRunHistory", () => {
 				id: String(index),
 				tool: "read",
 				summary: `file-${index}`,
+				args: { path: `file-${index}` },
 			});
 		}
 		history.recordEvent("1", {
@@ -121,6 +122,59 @@ describe("AgentRunHistory", () => {
 			id: "104",
 			status: "completed",
 		});
+		expect(history.getToolArgumentLines("1", "4")).toBeUndefined();
+		const argumentLines = history.getToolArgumentLines("1", "104");
+		expect(argumentLines).toEqual(["   {", '     "path": "file-104"', "   }"]);
+		expect(history.getToolArgumentLines("1", "104")).toBe(argumentLines);
+		history.recordEvent("1", {
+			type: "tool_end",
+			id: "unmatched",
+			tool: "read",
+			failed: false,
+		});
+		expect(history.getToolArgumentLines("1", "5")).toBeUndefined();
+	});
+
+	test("updates live usage without persisting tool arguments", () => {
+		const terminal: any[] = [];
+		const history = new AgentRunHistory({
+			onTerminal: (run) => terminal.push(run),
+		});
+		history.register(registration("1"));
+		history.recordEvent("1", {
+			type: "tool_start",
+			id: "call",
+			tool: "exec",
+			summary: "command omitted",
+			args: { command: "echo super-secret" },
+		});
+		history.recordEvent("1", {
+			type: "usage",
+			model: "provider/live-model",
+			usage: {
+				input: 10,
+				output: 5,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 15,
+				cost: {
+					input: 0.01,
+					output: 0.02,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 0.03,
+				},
+			},
+		});
+		expect(history.get("1")).toMatchObject({
+			model: "provider/live-model",
+			usage: { totalTokens: 15, cost: { total: 0.03 } },
+		});
+		history.update("1", { status: "completed", completedAt: 2 });
+		expect(JSON.stringify(terminal[0])).not.toContain("super-secret");
+
+		history.reconstruct([]);
+		expect(history.getToolArgumentLines("1", "call")).toBeUndefined();
 	});
 
 	test("rejects ID collisions and unsubscribes listeners", () => {

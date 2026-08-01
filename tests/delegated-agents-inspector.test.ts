@@ -91,11 +91,15 @@ describe("delegated-agent inspector", () => {
 
 	test("uses notification instead of custom UI outside TUI", async () => {
 		let command: any;
+		let shortcut: any;
 		const notifications: string[] = [];
 		registerAgentInspector(
 			{
 				registerCommand: (_name: string, value: any) => {
 					command = value;
+				},
+				registerShortcut: (_key: string, value: any) => {
+					shortcut = value;
 				},
 			} as never,
 			historyWithRuns(),
@@ -110,8 +114,96 @@ describe("delegated-agent inspector", () => {
 				},
 			},
 		});
+		await shortcut.handler({
+			mode: "print",
+			ui: { notify: (message: string) => notifications.push(message) },
+		});
+		expect(notifications).toHaveLength(2);
 		expect(notifications[0]).toContain("active");
 		expect(formatAgentSummary(new AgentRunHistory())).toContain("No delegated");
+	});
+
+	test("wraps detail text and reveals in-memory tool arguments", () => {
+		const history = historyWithRuns();
+		history.update("active", {
+			task: "alpha beta gamma delta epsilon zeta eta theta tailmarker",
+		});
+		history.recordEvent("active", {
+			type: "tool_start",
+			id: "call",
+			tool: "exec",
+			summary: "command omitted",
+			args: { command: "echo full-command" },
+		});
+		const component = new AgentInspectorComponent({
+			history,
+			manager: {} as never,
+			theme,
+			requestRender() {},
+			done() {},
+		});
+		component.handleInput("\r");
+		expect(component.render(40).join("\n")).not.toContain("tailmarker");
+		component.handleInput("t");
+		expect(component.render(40).join("\n")).toContain("tailmarker");
+		component.handleInput("a");
+		expect(component.render(80).join("\n")).toContain("echo full-command");
+		component.dispose();
+	});
+
+	test("clamps detail scrolling after content and width changes", () => {
+		const history = historyWithRuns();
+		history.update("active", {
+			task: "wrapped ".repeat(100),
+			output: Array.from({ length: 40 }, (_, index) => `line-${index}`).join(
+				"\n",
+			),
+		});
+		const component = new AgentInspectorComponent({
+			history,
+			manager: {} as never,
+			theme,
+			requestRender() {},
+			done() {},
+		});
+		component.handleInput("\r");
+		for (let index = 0; index < 100; index++) component.handleInput("j");
+		expect(component.render(80)).toHaveLength(29);
+
+		component.handleInput("t");
+		component.render(30);
+		for (let index = 0; index < 100; index++) component.handleInput("j");
+		history.update("active", { output: "done" });
+		expect(component.render(200).join("\n")).toContain("explore-shallow");
+		component.dispose();
+	});
+
+	test("opens an eighty-percent overlay from the shortcut", async () => {
+		let shortcutKey = "";
+		let shortcut: any;
+		let overlayOptions: any;
+		registerAgentInspector(
+			{
+				registerCommand() {},
+				registerShortcut: (key: string, value: any) => {
+					shortcutKey = key;
+					shortcut = value;
+				},
+			} as never,
+			historyWithRuns(),
+			{} as never,
+		);
+		await shortcut.handler({
+			mode: "tui",
+			ui: {
+				custom: async (_factory: unknown, options: any) => {
+					overlayOptions = options.overlayOptions;
+				},
+			},
+		});
+		expect(shortcutKey).toBe("ctrl+alt+a");
+		expect(overlayOptions.width).toBe("80%");
+		expect(overlayOptions.maxHeight).toBe("80%");
 	});
 
 	test("loads full output only on request and reports read failures", async () => {

@@ -2,19 +2,23 @@ import { open } from "node:fs/promises";
 import {
 	copyToClipboard,
 	type ExtensionAPI,
+	type ExtensionContext,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
 	type Focusable,
+	Key,
 	matchesKey,
 	truncateToWidth,
 	visibleWidth,
+	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import type { AgentRunHistory, AgentRunListItem } from "./run-history.js";
 import type { DelegatedAgentManager } from "./runs.js";
 import type { AgentRunSnapshot } from "./types.js";
 
 const OUTPUT_PAGE_BYTES = 64 * 1024;
+const DETAIL_VIEWPORT_HEIGHT = 26;
 
 interface OutputPage {
 	text: string;
@@ -75,13 +79,15 @@ export function formatAgentSummary(history: AgentRunHistory): string {
 }
 
 export class AgentInspectorComponent implements Focusable {
-	readonly width = 88;
 	focused = false;
 	#selectedId: string | undefined;
 	#view: "list" | "detail" | "filter" | "confirm" = "list";
 	#filter = "";
 	#status = "";
 	#detailScroll = 0;
+	#detailWidth = 86;
+	#wrapDetail = false;
+	#showArguments = false;
 	#listOffset = 0;
 	#loadedOutput: LoadedOutputPage | undefined;
 	#summaries: AgentRunListItem[];
@@ -155,7 +161,7 @@ export class AgentInspectorComponent implements Focusable {
 		} else if (matchesKey(data, "down") || data === "j") {
 			if (this.#view === "detail")
 				this.#detailScroll = Math.min(
-					Math.max(0, this.#renderDetail().length - 1),
+					Math.max(0, this.#detailLines().length - DETAIL_VIEWPORT_HEIGHT),
 					this.#detailScroll + 1,
 				);
 			else this.#move(1);
@@ -168,6 +174,12 @@ export class AgentInspectorComponent implements Focusable {
 			void this.#copyId();
 		} else if (data === "f" && this.#view === "detail") {
 			void this.#loadFullOutput();
+		} else if (data === "t" && this.#view === "detail") {
+			this.#wrapDetail = !this.#wrapDetail;
+			this.#detailScroll = 0;
+		} else if (data === "a" && this.#view === "detail") {
+			this.#showArguments = !this.#showArguments;
+			this.#detailScroll = 0;
 		} else if (data === "r") {
 			this.#refresh(true);
 		}
@@ -175,22 +187,33 @@ export class AgentInspectorComponent implements Focusable {
 	}
 
 	render(width: number): string[] {
-		const w = Math.max(20, Math.min(width, this.width));
+		const w = Math.max(2, width);
 		const inner = w - 2;
+		this.#detailWidth = inner;
 		const row = (content = "") => {
 			const clipped = truncateToWidth(content, inner, "…", true);
 			return `${this.#theme.fg("border", "│")}${clipped}${" ".repeat(Math.max(0, inner - visibleWidth(clipped)))}${this.#theme.fg("border", "│")}`;
 		};
 		const lines = [this.#theme.fg("border", `╭${"─".repeat(inner)}╮`)];
 		const detail = this.#view === "detail";
-		const content = detail ? this.#renderDetail() : this.#renderList();
+		const content = detail ? this.#detailLines() : this.#renderList();
+		if (detail)
+			this.#detailScroll = Math.min(
+				this.#detailScroll,
+				Math.max(0, content.length - DETAIL_VIEWPORT_HEIGHT),
+			);
 		const visible = detail
-			? content.slice(this.#detailScroll, this.#detailScroll + 26)
+			? content.slice(
+					this.#detailScroll,
+					this.#detailScroll + DETAIL_VIEWPORT_HEIGHT,
+				)
 			: content.slice(0, 28);
 		for (const line of visible) lines.push(row(line));
 		if (detail)
 			lines.push(
-				row(" Esc back · ↑↓ scroll · f full output · c cancel · y copy ID"),
+				row(
+					` Esc back · ↑↓ scroll · t wrap ${this.#wrapDetail ? "on" : "off"} · a args ${this.#showArguments ? "on" : "off"} · f full output · c cancel · y copy ID`,
+				),
 			);
 		lines.push(this.#theme.fg("border", `╰${"─".repeat(inner)}╯`));
 		return lines;
@@ -271,10 +294,19 @@ export class AgentInspectorComponent implements Focusable {
 		];
 		if (run.omittedTimelineEvents)
 			lines.push(` … ${run.omittedTimelineEvents} earlier events omitted`);
-		for (const event of run.timeline)
+		for (const event of run.timeline) {
 			lines.push(
 				` ${formatTime(event.startedAt)}  ${event.tool}  ${event.summary}  ${event.status}`,
 			);
+			if (this.#showArguments) {
+				const argumentLines = this.#history.getToolArgumentLines(
+					run.id,
+					event.id,
+				);
+				if (argumentLines) lines.push(...argumentLines);
+				else lines.push("   (arguments unavailable)");
+			}
+		}
 		if (run.error) {
 			lines.push("", " Error");
 			lines.push(...run.error.split("\n").map((line) => ` ${line}`));
@@ -290,6 +322,13 @@ export class AgentInspectorComponent implements Focusable {
 		);
 		if (this.#status) lines.push("", ` ${this.#theme.fg("dim", this.#status)}`);
 		return lines;
+	}
+
+	#detailLines(): string[] {
+		const lines = this.#renderDetail();
+		return this.#wrapDetail
+			? lines.flatMap((line) => wrapTextWithAnsi(line, this.#detailWidth))
+			: lines;
 	}
 
 	#runs(): AgentRunListItem[] {
@@ -422,27 +461,36 @@ export function registerAgentInspector(
 	history: AgentRunHistory,
 	manager: DelegatedAgentManager,
 ): void {
+	const openInspector = async (ctx: ExtensionContext) => {
+		if (ctx.mode !== "tui") {
+			ctx.ui.notify(formatAgentSummary(history), "info");
+			return;
+		}
+		await ctx.ui.custom<void>(
+			(tui, theme, _keybindings, done) =>
+				new AgentInspectorComponent({
+					history,
+					manager,
+					theme,
+					requestRender: () => tui.requestRender(),
+					done,
+				}),
+			{
+				overlay: true,
+				overlayOptions: {
+					width: "80%",
+					minWidth: 30,
+					maxHeight: "80%",
+				},
+			},
+		);
+	};
 	pi.registerCommand("agents", {
 		description: "Inspect delegated agents on the current session branch",
-		handler: async (_args, ctx) => {
-			if (ctx.mode !== "tui") {
-				ctx.ui.notify(formatAgentSummary(history), "info");
-				return;
-			}
-			await ctx.ui.custom<void>(
-				(tui, theme, _keybindings, done) =>
-					new AgentInspectorComponent({
-						history,
-						manager,
-						theme,
-						requestRender: () => tui.requestRender(),
-						done,
-					}),
-				{
-					overlay: true,
-					overlayOptions: { width: 88, minWidth: 30, maxHeight: "90%" },
-				},
-			);
-		},
+		handler: async (_args, ctx) => openInspector(ctx),
+	});
+	pi.registerShortcut(Key.ctrlAlt("a"), {
+		description: "Inspect delegated agents",
+		handler: openInspector,
 	});
 }

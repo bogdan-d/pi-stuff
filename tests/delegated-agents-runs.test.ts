@@ -349,6 +349,7 @@ describe("DelegatedAgentManager", () => {
 					id: "read-1",
 					tool: "read",
 					summary: "file.ts",
+					args: { path: "file.ts" },
 				});
 				return { ...child(), model: "actual/model" };
 			},
@@ -397,6 +398,7 @@ describe("DelegatedAgentManager", () => {
 					id: "tool",
 					tool: "read",
 					summary: "file.ts",
+					args: { path: "file.ts" },
 				});
 				return child();
 			},

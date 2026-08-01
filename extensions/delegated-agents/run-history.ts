@@ -1,3 +1,4 @@
+import type { Usage } from "@earendil-works/pi-ai";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { ROLE_NAMES } from "./roles.js";
 import type {
@@ -30,8 +31,15 @@ export type AgentRunRegistration = Omit<
 >;
 
 export type DelegatedAgentRuntimeEvent =
-	| { type: "tool_start"; id: string; tool: string; summary: string }
-	| { type: "tool_end"; id: string; tool: string; failed: boolean };
+	| {
+			type: "tool_start";
+			id: string;
+			tool: string;
+			summary: string;
+			args: Record<string, unknown>;
+	  }
+	| { type: "tool_end"; id: string; tool: string; failed: boolean }
+	| { type: "usage"; usage: Usage; model: string };
 
 function clone<T>(value: T): T {
 	return structuredClone(value);
@@ -128,6 +136,11 @@ export type AgentRunListItem = Pick<
 
 export class AgentRunHistory {
 	readonly #runs = new Map<string, AgentRunSnapshot>();
+	// Keep raw arguments out of persisted snapshots; commands may contain secrets.
+	readonly #toolArgumentLines = new Map<
+		string,
+		Map<string, readonly string[]>
+	>();
 	readonly #localIds = new Set<string>();
 	readonly #ordinals = new Map<string, number>();
 	readonly #listeners = new Set<() => void>();
@@ -159,6 +172,7 @@ export class AgentRunHistory {
 			omittedTimelineEvents: 0,
 		};
 		this.#runs.set(run.id, snapshot);
+		this.#toolArgumentLines.delete(run.id);
 		this.#ordinals.set(run.id, this.#nextOrdinal++);
 		this.#localIds.add(run.id);
 		this.#emit();
@@ -182,9 +196,26 @@ export class AgentRunHistory {
 
 	recordEvent(id: string, event: DelegatedAgentRuntimeEvent): void {
 		const run = this.#require(id);
+		if (event.type === "usage") {
+			run.usage = clone(event.usage);
+			run.model = event.model;
+			this.#emit();
+			return;
+		}
 		const existing = run.timeline.find((item) => item.id === event.id);
 		if (event.type === "tool_start") {
 			if (existing) return;
+			let argumentsByTool = this.#toolArgumentLines.get(id);
+			if (!argumentsByTool) {
+				argumentsByTool = new Map();
+				this.#toolArgumentLines.set(id, argumentsByTool);
+			}
+			argumentsByTool.set(
+				event.id,
+				JSON.stringify(event.args, null, 2)
+					.split("\n")
+					.map((line) => `   ${line}`),
+			);
 			run.timeline.push({
 				id: event.id,
 				tool: event.tool,
@@ -193,7 +224,8 @@ export class AgentRunHistory {
 				startedAt: this.#now(),
 			});
 			if (run.timeline.length > MAX_TIMELINE) {
-				run.timeline.shift();
+				const omitted = run.timeline.shift();
+				if (omitted) argumentsByTool.delete(omitted.id);
 				run.omittedTimelineEvents++;
 			}
 		} else if (existing) {
@@ -212,10 +244,18 @@ export class AgentRunHistory {
 			run.timeline.push(item);
 		}
 		if (run.timeline.length > MAX_TIMELINE) {
-			run.timeline.shift();
+			const omitted = run.timeline.shift();
+			if (omitted) this.#toolArgumentLines.get(id)?.delete(omitted.id);
 			run.omittedTimelineEvents++;
 		}
 		this.#emit();
+	}
+
+	getToolArgumentLines(
+		runId: string,
+		toolCallId: string,
+	): readonly string[] | undefined {
+		return this.#toolArgumentLines.get(runId)?.get(toolCallId);
 	}
 
 	get(id: string): AgentRunSnapshot | undefined {
@@ -255,6 +295,9 @@ export class AgentRunHistory {
 		const ownedActive = [...this.#runs.values()].filter(
 			(run) => this.#localIds.has(run.id) && !TERMINAL.has(run.status),
 		);
+		const ownedActiveIds = new Set(ownedActive.map((run) => run.id));
+		for (const id of this.#toolArgumentLines.keys())
+			if (!ownedActiveIds.has(id)) this.#toolArgumentLines.delete(id);
 		this.#runs.clear();
 		this.#ordinals.clear();
 		this.#nextOrdinal = 0;
