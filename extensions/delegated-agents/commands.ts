@@ -21,7 +21,11 @@ const DEFAULT = "role/parent default";
 
 export interface AgentCommandContext {
 	hasUI: boolean;
+	model:
+		| Pick<NonNullable<ExtensionCommandContext["model"]>, "id" | "provider">
+		| undefined;
 	modelRegistry: Pick<ExtensionCommandContext["modelRegistry"], "getAvailable">;
+	thinkingLevel?: ExtensionCommandContext["thinkingLevel"];
 	ui: Pick<
 		ExtensionUIContext,
 		"confirm" | "editor" | "input" | "notify" | "select"
@@ -469,11 +473,21 @@ export async function runAgentList(
 ): Promise<void> {
 	const config = loadForCommand(ctx, configPath);
 	if (!config) return;
-	const lines = [...createAgentCatalog(config).values()].map(
-		(agent) =>
-			`${agentLabel(config, agent.name)} (${agent.role}) — ${agent.description}`,
+	const parentModel = ctx.model
+		? `${ctx.model.provider}/${ctx.model.id}`
+		: "not selected";
+	const parentThinking = ctx.thinkingLevel ?? "not set";
+	const entries = [...createAgentCatalog(config).values()].map((agent) =>
+		[
+			agentLabel(config, agent.name),
+			`  Role:      ${agent.role}`,
+			`  Model:     ${agent.model ?? parentModel}`,
+			`  Thinking:  ${agent.thinking ?? parentThinking}`,
+			"  Description:",
+			...agent.description.split("\n").map((line) => `    ${line}`),
+		].join("\n"),
 	);
-	ctx.ui.notify(lines.join("\n"), "info");
+	ctx.ui.notify(entries.join("\n\n"), "info");
 }
 
 export function registerAgentCommands(pi: ExtensionAPI): void {

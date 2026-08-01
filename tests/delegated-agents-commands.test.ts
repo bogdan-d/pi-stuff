@@ -43,12 +43,14 @@ afterEach(() => {
 
 class FakeContext implements AgentCommandContext {
 	hasUI = true;
+	model = { provider: "parent", id: "active" };
 	modelRegistry = {
 		getAvailable: () => [
 			{ provider: "provider", id: "model" },
 			{ provider: "definition", id: "model" },
 		],
 	};
+	thinkingLevel = "medium" as const;
 	inputs: Array<string | undefined> = [];
 	editors: Array<string | undefined> = [];
 	selections: Array<string | undefined> = [];
@@ -319,8 +321,28 @@ describe("delegated agent commands", () => {
 		await runAgentList(ctx, path);
 
 		const output = ctx.notifications.at(-1)?.message;
-		expect(output).toContain("planning [disabled] (planning)");
-		expect(output).toContain("custom (review) — Custom reviewer.");
+		expect(output).toContain(
+			[
+				"planning [disabled]",
+				"  Role:      planning",
+				"  Model:     parent/active",
+				"  Thinking:  medium",
+				"  Description:",
+			].join("\n"),
+		);
+		expect(output).toContain(
+			[
+				"custom",
+				"  Role:      review",
+				"  Model:     parent/active",
+				"  Thinking:  medium",
+				"  Description:",
+				"    Custom reviewer.",
+			].join("\n"),
+		);
+		expect(output).toContain(
+			"explore-shallow\n  Role:      explore-shallow\n  Model:     openai-codex/gpt-5.6-luna\n  Thinking:  low",
+		);
 	});
 
 	test("removes the final agent but keeps an empty config", async () => {
