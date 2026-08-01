@@ -21,6 +21,7 @@ const DEFAULT = "role/parent default";
 
 export interface AgentCommandContext {
 	hasUI: boolean;
+	modelRegistry: Pick<ExtensionCommandContext["modelRegistry"], "getAvailable">;
 	ui: Pick<
 		ExtensionUIContext,
 		"confirm" | "editor" | "input" | "notify" | "select"
@@ -54,15 +55,23 @@ async function requiredEditor(
 	}
 }
 
-async function optionalEditor(
+async function selectModel(
 	ctx: AgentCommandContext,
-	title: string,
-	prefill = "",
+	current?: string,
 ): Promise<{ cancelled: true } | { cancelled: false; value?: string }> {
-	const value = await ctx.ui.editor(title, prefill);
-	if (value === undefined) return { cancelled: true };
-	const trimmed = value.trim();
-	return trimmed ? { cancelled: false, value: trimmed } : { cancelled: false };
+	const choices = [
+		DEFAULT,
+		...(current ? [current] : []),
+		...ctx.modelRegistry
+			.getAvailable()
+			.map((model) => `${model.provider}/${model.id}`)
+			.sort(),
+	].filter((value, index, values) => values.indexOf(value) === index);
+	const selected = await ctx.ui.select("Model", choices);
+	if (selected === undefined) return { cancelled: true };
+	return selected === DEFAULT
+		? { cancelled: false }
+		: { cancelled: false, value: selected };
 }
 
 async function selectThinking(
@@ -115,11 +124,7 @@ async function promptAgent(
 			prompt = undefined;
 		}
 	}
-	const model = await optionalEditor(
-		ctx,
-		"Model (blank = role/parent default)",
-		current?.model,
-	);
+	const model = await selectModel(ctx, current?.model);
 	if (model.cancelled) return undefined;
 	const thinking = await selectThinking(ctx, current?.thinking);
 	if (thinking.cancelled) return undefined;
@@ -374,11 +379,7 @@ export async function runAgentOverride(
 	);
 	if (name === undefined) return;
 	const current = config.overrides?.[name];
-	const model = await optionalEditor(
-		ctx,
-		"Model (blank = agent/parent default)",
-		current?.model,
-	);
+	const model = await selectModel(ctx, current?.model);
 	if (model.cancelled) return;
 	const thinking = await selectThinking(ctx, current?.thinking);
 	if (thinking.cancelled) return;

@@ -43,17 +43,27 @@ afterEach(() => {
 
 class FakeContext implements AgentCommandContext {
 	hasUI = true;
+	modelRegistry = {
+		getAvailable: () => [
+			{ provider: "provider", id: "model" },
+			{ provider: "definition", id: "model" },
+		],
+	};
 	inputs: Array<string | undefined> = [];
 	editors: Array<string | undefined> = [];
 	selections: Array<string | undefined> = [];
 	confirmations: boolean[] = [];
 	notifications: Array<{ message: string; type?: string }> = [];
+	selectCalls: Array<{ title: string; options: string[] }> = [];
 	reloads = 0;
 
 	ui = {
 		input: async () => this.inputs.shift(),
 		editor: async () => this.editors.shift(),
-		select: async () => this.selections.shift(),
+		select: async (title: string, options: string[]) => {
+			this.selectCalls.push({ title, options });
+			return this.selections.shift();
+		},
 		confirm: async () => this.confirmations.shift() ?? false,
 		notify: (message: string, type?: "info" | "warning" | "error") => {
 			this.notifications.push({ message, ...(type ? { type } : {}) });
@@ -70,13 +80,8 @@ describe("delegated agent commands", () => {
 		const path = configPath();
 		const ctx = new FakeContext();
 		ctx.inputs.push("", "Bad_name", "rust-implementer");
-		ctx.selections.push("implementation", "high");
-		ctx.editors.push(
-			"",
-			"Implements Rust.",
-			"Prefer idiomatic Rust.",
-			"provider/model",
-		);
+		ctx.selections.push("implementation", "provider/model", "high");
+		ctx.editors.push("", "Implements Rust.", "Prefer idiomatic Rust.");
 		ctx.confirmations.push(true);
 
 		await runAgentAdd(ctx, path);
@@ -92,6 +97,9 @@ describe("delegated agent commands", () => {
 		expect(ctx.notifications.map(({ message }) => message)).toContain(
 			"Value is required.",
 		);
+		expect(
+			ctx.selectCalls.find(({ title }) => title === "Model")?.options,
+		).toEqual(["role/parent default", "definition/model", "provider/model"]);
 		expect(statSync(path).mode & 0o777).toBe(0o600);
 	});
 
@@ -116,8 +124,14 @@ describe("delegated agent commands", () => {
 			path,
 		);
 		const ctx = new FakeContext();
-		ctx.selections.push("rust", "review", "role/parent default", "enabled");
-		ctx.editors.push("New description", "New prompt", "");
+		ctx.selections.push(
+			"rust",
+			"review",
+			"role/parent default",
+			"role/parent default",
+			"enabled",
+		);
+		ctx.editors.push("New description", "New prompt");
 		ctx.confirmations.push(true);
 
 		await runAgentEdit(ctx, path);
@@ -142,8 +156,12 @@ describe("delegated agent commands", () => {
 		const path = configPath();
 		writeCustomAgentConfig({ agents: {} }, path);
 		const ctx = new FakeContext();
-		ctx.selections.push("planning", "role/parent default", "disabled");
-		ctx.editors.push("");
+		ctx.selections.push(
+			"planning",
+			"role/parent default",
+			"role/parent default",
+			"disabled",
+		);
 		ctx.confirmations.push(true);
 
 		await runAgentOverride(ctx, path);
@@ -172,8 +190,14 @@ describe("delegated agent commands", () => {
 			path,
 		);
 		const ctx = new FakeContext();
-		ctx.selections.push("custom [disabled]", "review", "medium", "disabled");
-		ctx.editors.push("New", "New prompt", "definition/model");
+		ctx.selections.push(
+			"custom [disabled]",
+			"review",
+			"definition/model",
+			"medium",
+			"disabled",
+		);
+		ctx.editors.push("New", "New prompt");
 		ctx.confirmations.push(true);
 
 		await runAgentEdit(ctx, path);
@@ -204,9 +228,14 @@ describe("delegated agent commands", () => {
 			path,
 		);
 		const ctx = new FakeContext();
-		ctx.selections.push("source [disabled]", "implementation", "high");
+		ctx.selections.push(
+			"source [disabled]",
+			"implementation",
+			"definition/model",
+			"high",
+		);
 		ctx.inputs.push("clone");
-		ctx.editors.push("Source", "Source prompt", "definition/model");
+		ctx.editors.push("Source", "Source prompt");
 		ctx.confirmations.push(true);
 
 		await runAgentClone(ctx, path);
@@ -226,13 +255,17 @@ describe("delegated agent commands", () => {
 		writeCustomAgentConfig({ agents: {} }, path);
 		const copiedPrompt = readFileSync(ROLES.review.promptPath, "utf8").trim();
 		const ctx = new FakeContext();
-		ctx.selections.push("review", "review", "role/parent default");
+		ctx.selections.push(
+			"review",
+			"review",
+			"role/parent default",
+			"role/parent default",
+		);
 		ctx.inputs.push("review-copy");
 		ctx.editors.push(
 			ROLES.review.description,
 			copiedPrompt,
 			"Focus on API compatibility.",
-			"",
 		);
 		ctx.confirmations.push(true);
 
