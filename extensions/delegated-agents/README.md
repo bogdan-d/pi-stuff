@@ -16,10 +16,20 @@ inspect one, or `delegate_agent_result({ id, wait: true })` to wait. Interruptin
 that wait does not cancel the child. Use `delegate_agent_cancel({ id })` to
 cancel queued or running work.
 
-Runs and terminal records live only in the current parent session. Reload,
-session replacement, or shutdown cancels active work. Completion notices are
-queued for the next turn and never wake the parent automatically. Full child
-usage counts toward parent totals only on the first terminal result retrieval.
+Active runs live only in the current runtime. Reload, session replacement, or
+shutdown cancels them. Compact terminal summaries persist on the current
+session branch and survive resume and fork. Completion notices are queued for
+the next turn and never wake the parent automatically. Full child usage counts
+toward parent totals only on the first terminal result retrieval.
+
+Run `/agents` to inspect foreground and background calls without involving the
+parent model. The modal shows active work first, then branch history. Enter opens
+details; `/` filters; `c` confirms cancellation of owned active background work;
+`f` loads the next bounded page of a retained full-output file; and `y` copies
+the run ID. Arrow keys or
+`j/k` navigate and scroll. Forked/reloaded history is marked inherited and
+cannot be cancelled. Tool timelines retain bounded path-oriented summaries;
+raw arguments, results, shell commands, messages, and reasoning are not stored.
 
 Only one non-terminal implementation may target a resolved working directory
 by default. Do not duplicate a background implementation's work.

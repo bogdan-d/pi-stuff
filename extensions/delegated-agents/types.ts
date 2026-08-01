@@ -53,6 +53,8 @@ export interface ChildRunDetails {
 }
 
 export interface PersistedRunDetails {
+	id: string;
+	mode: "foreground";
 	agent: string;
 	role: RoleName;
 	description?: string;
@@ -62,6 +64,42 @@ export interface PersistedRunDetails {
 	usage: Usage;
 	truncated: boolean;
 	fullOutputPath?: string;
+}
+
+export type AgentRunMode = "foreground" | "background";
+
+export interface AgentToolTimelineEvent {
+	id: string;
+	tool: string;
+	summary: string;
+	status: "running" | "completed" | "failed";
+	startedAt: number;
+	completedAt?: number;
+}
+
+export interface AgentRunSnapshot {
+	version: 1;
+	id: string;
+	mode: AgentRunMode;
+	status: BackgroundRunStatus;
+	agent: string;
+	role: RoleName;
+	description?: string;
+	task: string;
+	cwd: string;
+	model: string;
+	thinking?: ModelThinkingLevel;
+	createdAt: number;
+	startedAt?: number;
+	completedAt?: number;
+	usage?: Usage;
+	output?: string;
+	error?: string;
+	truncated?: boolean;
+	fullOutputPath?: string;
+	timeline: AgentToolTimelineEvent[];
+	omittedTimelineEvents: number;
+	inherited?: boolean;
 }
 
 export type BackgroundRunStatus =

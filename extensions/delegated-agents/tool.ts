@@ -3,7 +3,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { formatAgentCatalog, getAgentNames } from "./agents.js";
 import { renderDelegateCall, renderDelegateResult } from "./render.js";
-import { finalizeRun, formatRunFailure } from "./results.js";
+import { formatRunFailure } from "./results.js";
 import type { DelegatedAgentManager } from "./runs.js";
 import type { AgentCatalog, DelegateRunDetails } from "./types.js";
 
@@ -95,7 +95,7 @@ export function createDelegateAgentTool(
 				};
 			}
 
-			const details = await manager.runForeground({
+			const foreground = await manager.runForeground({
 				run: {
 					...run,
 					...(signal ? { signal } : {}),
@@ -105,14 +105,18 @@ export function createDelegateAgentTool(
 					? { allowConcurrentWrites: true }
 					: {}),
 			});
-			const finalized = await finalizeRun(details);
+			const { details, finalized } = foreground;
 			if (finalized.failed)
 				throw new Error(
 					formatRunFailure(params.agent, finalized.error ?? finalized.output),
 				);
 			return {
 				content: [{ type: "text", text: finalized.output }],
-				details: finalized.details,
+				details: {
+					...finalized.details,
+					id: foreground.id,
+					mode: "foreground",
+				},
 				usage: details.usage,
 			};
 		},

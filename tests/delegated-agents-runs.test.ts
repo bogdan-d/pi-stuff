@@ -312,4 +312,92 @@ describe("DelegatedAgentManager", () => {
 		await expect(foreground).rejects.toThrow("aborted");
 		expect(() => start(manager)).toThrow("shutting down");
 	});
+
+	test("tracks foreground before invocation and settles runtime details", async () => {
+		let seenBeforeRun = false;
+		let manager!: DelegatedAgentManager;
+		manager = new DelegatedAgentManager({
+			run: async (options) => {
+				seenBeforeRun = manager.history.list()[0]?.status === "running";
+				options.onEvent?.({
+					type: "tool_start",
+					id: "read-1",
+					tool: "read",
+					summary: "file.ts",
+				});
+				return { ...child(), model: "actual/model" };
+			},
+			finalize: async (details) => ({
+				...(await finalize(details)),
+				output: "foreground output",
+			}),
+			createId: () => "foreground",
+		});
+		const result = await manager.runForeground({
+			run: { spec: specs.review as any, task: "task", cwd: "/tmp" },
+		});
+		expect(seenBeforeRun).toBe(true);
+		expect(result.id).toBe("foreground");
+		expect(manager.history.get(result.id)).toMatchObject({
+			status: "completed",
+			model: "actual/model",
+			output: "foreground output",
+		});
+		expect(manager.history.get(result.id)?.timeline[0]).toMatchObject({
+			status: "failed",
+		});
+	});
+
+	test("retains inspector summaries after result-record eviction", async () => {
+		let id = 0;
+		const manager = new DelegatedAgentManager({
+			run: async () => child(),
+			finalize,
+			maxRecords: 1,
+			createId: () => String(++id),
+		});
+		const first = start(manager);
+		await manager.waitFor(first.id);
+		const second = start(manager);
+		await manager.waitFor(second.id);
+		expect(manager.history.list().map((run) => run.id)).toEqual(["2", "1"]);
+		expect(() => manager.get("1")).toThrow("Unknown");
+	});
+
+	test("settles runs when terminal persistence or runtime observers throw", async () => {
+		const manager = new DelegatedAgentManager({
+			run: async (options) => {
+				options.onEvent?.({
+					type: "tool_start",
+					id: "tool",
+					tool: "read",
+					summary: "file.ts",
+				});
+				return child();
+			},
+			finalize,
+			createId: (() => {
+				let id = 0;
+				return () => String(++id);
+			})(),
+			onRunTerminal: () => {
+				throw new Error("persistence failed");
+			},
+		});
+		const background = start(manager);
+		await expect(manager.waitFor(background.id)).resolves.toMatchObject({
+			status: "completed",
+		});
+		const foreground = await manager.runForeground({
+			run: {
+				spec: specs.review as any,
+				task: "task",
+				cwd: "/tmp",
+				onEvent: () => {
+					throw new Error("observer failed");
+				},
+			},
+		});
+		expect(foreground.finalized.failed).toBe(false);
+	});
 });

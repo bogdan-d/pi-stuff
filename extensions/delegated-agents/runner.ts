@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import type {
 	AssistantMessage,
 	ModelThinkingLevel,
@@ -11,6 +11,7 @@ import type {
 import { getPackageDir, RpcClient } from "@earendil-works/pi-coding-agent";
 import { getFinalOutput, getToolCalls } from "./messages.js";
 import { ROLES } from "./roles.js";
+import type { DelegatedAgentRuntimeEvent } from "./run-history.js";
 import type { AgentSpec, ChildRunDetails } from "./types.js";
 
 export const CHILD_ENV = "PI_DELEGATED_AGENT_CHILD";
@@ -98,6 +99,63 @@ export interface RunDelegatedAgentOptions {
 	thinking?: ModelThinkingLevel;
 	signal?: AbortSignal;
 	onUpdate?: AgentToolUpdateCallback<ChildRunDetails>;
+	onEvent?: (event: DelegatedAgentRuntimeEvent) => void;
+}
+
+function oneLine(value: unknown, fallback: string): string {
+	const text = String(value ?? fallback)
+		.replaceAll(/\s+/g, " ")
+		.trim();
+	return (text || fallback).slice(0, 160);
+}
+
+export function summarizeToolCall(
+	tool: string,
+	args: Record<string, unknown>,
+): string {
+	if (["bash", "exec", "exec_command"].includes(tool)) return "command omitted";
+	if (["read", "write", "edit", "ls"].includes(tool))
+		return oneLine(normalize(String(args["path"] ?? ".")), ".");
+	if (["grep", "find", "rg"].includes(tool)) {
+		const pattern = oneLine(args["pattern"], "*");
+		const path = oneLine(normalize(String(args["path"] ?? ".")), ".");
+		return `${pattern} in ${path}`.slice(0, 160);
+	}
+	return tool;
+}
+
+export function runtimeEventFromRpcEvent(event: {
+	type: string;
+	toolCallId?: string;
+	toolName?: string;
+	args?: unknown;
+	isError?: boolean;
+}): DelegatedAgentRuntimeEvent | undefined {
+	if (
+		(event.type !== "tool_execution_start" &&
+			event.type !== "tool_execution_end") ||
+		!event.toolCallId ||
+		!event.toolName
+	)
+		return undefined;
+	if (event.type === "tool_execution_end") {
+		return {
+			type: "tool_end",
+			id: event.toolCallId,
+			tool: event.toolName,
+			failed: event.isError ?? false,
+		};
+	}
+	const args =
+		event.args && typeof event.args === "object"
+			? (event.args as Record<string, unknown>)
+			: {};
+	return {
+		type: "tool_start",
+		id: event.toolCallId,
+		tool: event.toolName,
+		summary: summarizeToolCall(event.toolName, args),
+	};
 }
 
 export async function runDelegatedAgent(
@@ -132,16 +190,28 @@ export async function runDelegatedAgent(
 		`Task: ${options.task}`,
 	].join("\n\n");
 	const handleEvent: RpcEventListener = (event) => {
+		const runtimeEvent = runtimeEventFromRpcEvent(event);
+		if (runtimeEvent) {
+			try {
+				options.onEvent?.(runtimeEvent);
+			} catch {
+				// Runtime observers cannot own or disrupt the delegated run.
+			}
+		}
 		if (event.type !== "message_end" || event.message.role !== "assistant") {
 			return;
 		}
 		recordMessage(details, event.message);
 		const output = getFinalOutput(details.messages);
 		if (!output && getToolCalls(details.messages).length === 0) return;
-		options.onUpdate?.({
-			content: output ? [{ type: "text", text: output }] : [],
-			details,
-		});
+		try {
+			options.onUpdate?.({
+				content: output ? [{ type: "text", text: output }] : [],
+				details,
+			});
+		} catch {
+			// Parent streaming updates are advisory.
+		}
 	};
 	const removeEventListener = client.onEvent(handleEvent);
 	const abort = () => {

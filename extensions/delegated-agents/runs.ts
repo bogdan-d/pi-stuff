@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { FinalizedRun } from "./results.js";
+import { AgentRunHistory } from "./run-history.js";
 import {
 	DelegatedAgentRunError,
 	type RunDelegatedAgentOptions,
 } from "./runner.js";
 import type {
+	AgentRunSnapshot,
 	BackgroundLaunchDetails,
 	BackgroundRunResult,
 	BackgroundRunStatus,
@@ -34,6 +36,8 @@ export interface DelegatedAgentManagerOptions {
 	run: (options: RunDelegatedAgentOptions) => Promise<ChildRunDetails>;
 	finalize: (details: ChildRunDetails) => Promise<FinalizedRun>;
 	onBackgroundSettled?: (run: BackgroundRunResult) => void | Promise<void>;
+	history?: AgentRunHistory;
+	onRunTerminal?: (run: AgentRunSnapshot) => void;
 	maxConcurrentBackground?: number;
 	maxRecords?: number;
 	now?: () => number;
@@ -50,6 +54,12 @@ export interface ClaimedRunResult {
 	usage?: Usage;
 }
 
+export interface ForegroundRunResult {
+	id: string;
+	details: ChildRunDetails;
+	finalized: FinalizedRun;
+}
+
 export class DelegatedAgentManager {
 	readonly #run: DelegatedAgentManagerOptions["run"];
 	readonly #finalize: DelegatedAgentManagerOptions["finalize"];
@@ -58,6 +68,7 @@ export class DelegatedAgentManager {
 	readonly #maxRecords: number;
 	readonly #now: () => number;
 	readonly #createId: () => string;
+	readonly history: AgentRunHistory;
 	readonly #runs = new Map<string, RunRecord>();
 	readonly #queue: string[] = [];
 	readonly #foregroundControllers = new Set<AbortController>();
@@ -77,9 +88,15 @@ export class DelegatedAgentManager {
 		this.#now = options.now ?? Date.now;
 		this.#createId =
 			options.createId ?? (() => randomUUID().replaceAll("-", "").slice(0, 12));
+		this.history =
+			options.history ??
+			new AgentRunHistory({
+				now: this.#now,
+				...(options.onRunTerminal ? { onTerminal: options.onRunTerminal } : {}),
+			});
 	}
 
-	async runForeground(options: StartRunOptions): Promise<ChildRunDetails> {
+	async runForeground(options: StartRunOptions): Promise<ForegroundRunResult> {
 		this.#assertOpen();
 		const cwd = resolve(options.run.cwd);
 		this.#assertWriteAdmission(
@@ -87,19 +104,101 @@ export class DelegatedAgentManager {
 			cwd,
 			options.allowConcurrentWrites,
 		);
+		const id = this.#allocateId();
+		this.history.register({
+			id,
+			mode: "foreground",
+			status: "running",
+			agent: options.run.spec.name,
+			role: options.run.spec.role,
+			...(options.run.spec.description
+				? { description: options.run.spec.description }
+				: {}),
+			task: options.run.task,
+			cwd,
+			model: options.run.model ?? "default model",
+			...(options.run.thinking ? { thinking: options.run.thinking } : {}),
+			createdAt: this.#now(),
+			startedAt: this.#now(),
+		});
 		const writes = options.run.spec.role === "implementation";
 		if (writes) this.#addForegroundWrite(cwd);
 		const controller = new AbortController();
 		this.#foregroundControllers.add(controller);
+		let resolveCompletion: () => void = () => {};
+		const completion = new Promise<void>((resolvePromise) => {
+			resolveCompletion = resolvePromise;
+		});
+		this.#foregroundPromises.add(completion);
 		const signal = options.run.signal
 			? AbortSignal.any([options.run.signal, controller.signal])
 			: controller.signal;
-		const promise = this.#run({ ...options.run, cwd, signal });
-		this.#foregroundPromises.add(promise);
+		let promise: Promise<ChildRunDetails>;
 		try {
-			return await promise;
+			promise = this.#run({
+				...options.run,
+				cwd,
+				signal,
+				onEvent: (event) => {
+					try {
+						options.run.onEvent?.(event);
+					} catch {
+						// Callers observe runtime events; they do not own execution.
+					}
+					try {
+						this.history.recordEvent(id, event);
+					} catch {
+						// History observation must not disrupt the child run.
+					}
+				},
+			});
+		} catch (error) {
+			promise = Promise.reject(error);
+		}
+		try {
+			let details: ChildRunDetails;
+			try {
+				details = await promise;
+			} catch (error) {
+				if (!(error instanceof DelegatedAgentRunError)) {
+					this.history.update(id, {
+						status: signal.aborted ? "cancelled" : "failed",
+						completedAt: this.#now(),
+						...(signal.aborted
+							? {}
+							: {
+									error: error instanceof Error ? error.message : String(error),
+								}),
+					});
+					throw error;
+				}
+				details = error.details;
+			}
+			this.history.update(id, {
+				model: details.model,
+				...(details.thinking ? { thinking: details.thinking } : {}),
+				usage: details.usage,
+			});
+			const finalized = await this.#finalize(details);
+			this.#settleHistory(id, finalized, signal.aborted);
+			return { id, details, finalized };
+		} catch (error) {
+			const current = this.history.get(id);
+			if (current && !TERMINAL.has(current.status)) {
+				this.history.update(id, {
+					status: signal.aborted ? "cancelled" : "failed",
+					completedAt: this.#now(),
+					...(signal.aborted
+						? {}
+						: {
+								error: error instanceof Error ? error.message : String(error),
+							}),
+				});
+			}
+			throw error;
 		} finally {
-			this.#foregroundPromises.delete(promise);
+			resolveCompletion();
+			this.#foregroundPromises.delete(completion);
 			this.#foregroundControllers.delete(controller);
 			if (writes) this.#removeForegroundWrite(cwd);
 		}
@@ -114,13 +213,7 @@ export class DelegatedAgentManager {
 			cwd,
 			options.allowConcurrentWrites,
 		);
-		let id = "";
-		for (let attempt = 0; attempt < 100; attempt++) {
-			id = this.#createId();
-			if (!this.#runs.has(id)) break;
-		}
-		if (!id || this.#runs.has(id))
-			throw new Error("Unable to allocate background run ID.");
+		const id = this.#allocateId();
 		let resolveCompletion: () => void = () => {};
 		const completion = new Promise<void>((resolvePromise) => {
 			resolveCompletion = resolvePromise;
@@ -148,6 +241,19 @@ export class DelegatedAgentManager {
 			usageReported: false,
 		};
 		this.#runs.set(id, record);
+		this.history.register({
+			id,
+			mode: "background",
+			status: record.status,
+			agent: record.agent,
+			role: record.role,
+			...(record.description ? { description: record.description } : {}),
+			task: record.task,
+			cwd: record.cwd,
+			model: record.model,
+			...(record.thinking ? { thinking: record.thinking } : {}),
+			createdAt: record.createdAt,
+		});
 		this.#queue.push(id);
 		this.#pump();
 		return { ...this.#snapshot(record), mode: "background" };
@@ -204,6 +310,7 @@ export class DelegatedAgentManager {
 			record.completedAt = this.#now();
 			record.resolveCompletion();
 			this.#removeQueued(id);
+			this.#syncHistory(record);
 		} else if (record.status === "running") {
 			record.controller?.abort();
 		}
@@ -224,6 +331,7 @@ export class DelegatedAgentManager {
 				record.status = "cancelled";
 				record.completedAt = this.#now();
 				record.resolveCompletion();
+				this.#syncHistory(record);
 			}
 		}
 		this.#queue.length = 0;
@@ -250,6 +358,10 @@ export class DelegatedAgentManager {
 			record.controller = controller;
 			record.status = "running";
 			record.startedAt = this.#now();
+			this.history.update(record.id, {
+				status: "running",
+				startedAt: record.startedAt,
+			});
 			this.#activeBackground++;
 			const promise = this.#executeBackground(
 				record,
@@ -269,7 +381,17 @@ export class DelegatedAgentManager {
 	): Promise<void> {
 		let details: ChildRunDetails;
 		try {
-			details = await this.#run({ ...record.options, signal });
+			details = await this.#run({
+				...record.options,
+				signal,
+				onEvent: (event) => {
+					try {
+						this.history.recordEvent(record.id, event);
+					} catch {
+						// History observation must not disrupt the child run.
+					}
+				},
+			});
 		} catch (error) {
 			if (!(error instanceof DelegatedAgentRunError)) {
 				this.#settleError(record, error);
@@ -277,6 +399,9 @@ export class DelegatedAgentManager {
 			}
 			details = error.details;
 		}
+		record.model = details.model;
+		if (details.thinking) record.thinking = details.thinking;
+		record.usage = details.usage;
 		try {
 			this.#settleSuccess(record, await this.#finalize(details));
 		} catch (error) {
@@ -315,6 +440,11 @@ export class DelegatedAgentManager {
 	#finish(record: RunRecord): void {
 		record.completedAt = this.#now();
 		record.resolveCompletion();
+		try {
+			this.#syncHistory(record);
+		} catch {
+			// Completion remains authoritative if inspector persistence fails.
+		}
 		if (
 			!this.#closed &&
 			(record.status === "completed" || record.status === "failed")
@@ -328,6 +458,55 @@ export class DelegatedAgentManager {
 				// Delivery failure must not alter retained result.
 			}
 		}
+	}
+
+	#settleHistory(
+		id: string,
+		finalized: FinalizedRun,
+		cancelled: boolean,
+	): void {
+		this.history.update(id, {
+			status: cancelled
+				? "cancelled"
+				: finalized.failed
+					? "failed"
+					: "completed",
+			completedAt: this.#now(),
+			model: finalized.details.model,
+			...(finalized.details.thinking
+				? { thinking: finalized.details.thinking }
+				: {}),
+			usage: finalized.details.usage,
+			output: finalized.output,
+			...(finalized.error ? { error: finalized.error } : {}),
+			truncated: finalized.details.truncated,
+			...(finalized.details.fullOutputPath
+				? { fullOutputPath: finalized.details.fullOutputPath }
+				: {}),
+		});
+	}
+
+	#syncHistory(record: RunRecord): void {
+		this.history.update(record.id, {
+			status: record.status,
+			...(record.startedAt !== undefined
+				? { startedAt: record.startedAt }
+				: {}),
+			...(record.completedAt !== undefined
+				? { completedAt: record.completedAt }
+				: {}),
+			model: record.model,
+			...(record.thinking ? { thinking: record.thinking } : {}),
+			...(record.usage ? { usage: record.usage } : {}),
+			...(record.output !== undefined ? { output: record.output } : {}),
+			...(record.error !== undefined ? { error: record.error } : {}),
+			...(record.truncated !== undefined
+				? { truncated: record.truncated }
+				: {}),
+			...(record.fullOutputPath
+				? { fullOutputPath: record.fullOutputPath }
+				: {}),
+		});
 	}
 
 	#snapshot(record: RunRecord): BackgroundRunResult {
@@ -412,5 +591,13 @@ export class DelegatedAgentManager {
 	#assertOpen(): void {
 		if (this.#closed)
 			throw new Error("Delegated agent manager is shutting down.");
+	}
+
+	#allocateId(): string {
+		for (let attempt = 0; attempt < 100; attempt++) {
+			const id = this.#createId();
+			if (id && !this.#runs.has(id) && !this.history.has(id)) return id;
+		}
+		throw new Error("Unable to allocate delegated agent run ID.");
 	}
 }

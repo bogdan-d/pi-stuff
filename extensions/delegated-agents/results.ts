@@ -13,7 +13,7 @@ import type { ChildRunDetails, PersistedRunDetails } from "./types.js";
 
 export interface FinalizedRun {
 	output: string;
-	details: PersistedRunDetails;
+	details: Omit<PersistedRunDetails, "id" | "mode">;
 	failed: boolean;
 	error?: string;
 }

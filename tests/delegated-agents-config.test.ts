@@ -134,7 +134,7 @@ describe("delegated agent config", () => {
 		const manager = {
 			async runForeground(options: any) {
 				foregroundCalls.push(options);
-				return {
+				const details = {
 					agent: "review",
 					role: "review",
 					task: "task",
@@ -143,6 +143,22 @@ describe("delegated agent config", () => {
 					messages: [],
 					stderr: "",
 					usage,
+				};
+				return {
+					id: "foreground",
+					details,
+					finalized: {
+						output: "(no output)",
+						failed: false,
+						details: {
+							agent: details.agent,
+							role: details.role,
+							cwd: details.cwd,
+							model: details.model,
+							usage,
+							truncated: false,
+						},
+					},
 				};
 			},
 			startBackground(options: any) {
