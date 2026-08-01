@@ -45,12 +45,12 @@ describe("delegated agent config", () => {
 		});
 		expect(config.agents["z-reviewer"]).not.toHaveProperty("model");
 		expect(getAgentNames(createAgentCatalog(config))).toEqual([
+			"explore-shallow",
+			"explore-deep",
 			"planning",
 			"implementation",
 			"verification",
 			"review",
-			"explore-shallow",
-			"explore-deep",
 			"a-implementer",
 			"z-reviewer",
 		]);
@@ -73,12 +73,12 @@ describe("delegated agent config", () => {
 		const tool = createDelegateAgentTool(catalog, {} as never);
 
 		expect(tool.parameters.properties.agent.enum).toEqual([
+			"explore-shallow",
+			"explore-deep",
 			"planning",
 			"implementation",
 			"verification",
 			"review",
-			"explore-shallow",
-			"explore-deep",
 			"custom",
 		]);
 		expect(tool.description).toContain("custom (review): Reviews custom code.");
@@ -486,7 +486,7 @@ describe("delegated agent config", () => {
 			"custom",
 			{ role: "unknown", description: "x", prompt: "x" },
 			"agents.custom.role",
-			"expected planning|implementation|verification|review|explore-shallow|explore-deep",
+			"expected explore-shallow|explore-deep|planning|implementation|verification|review",
 		],
 		[
 			"custom",

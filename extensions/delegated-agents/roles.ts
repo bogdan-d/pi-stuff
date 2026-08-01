@@ -7,12 +7,12 @@ const promptPath = (name: RoleName) =>
 	path.join(ROOT_DIR, "prompts", `${name}.md`);
 
 export const ROLE_NAMES = [
+	"explore-shallow",
+	"explore-deep",
 	"planning",
 	"implementation",
 	"verification",
 	"review",
-	"explore-shallow",
-	"explore-deep",
 ] as const satisfies readonly RoleName[];
 
 export const ROLES: Record<RoleName, RoleSpec> = {
