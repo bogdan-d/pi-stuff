@@ -25,10 +25,10 @@ Output format:
 
 Example output:
 Q: What is your preferred database?
-A: 
+A:
 
 Q: Should we use TypeScript or JavaScript?
-A: 
+A:
 
 Keep questions in the order they appeared. Be concise.`;
 
@@ -36,7 +36,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("qna", {
 		description: "Extract questions from last assistant message into editor",
 		handler: async (_args, ctx) => {
-			if (!ctx.hasUI) {
+			if (ctx.mode !== "tui") {
 				ctx.ui.notify("qna requires interactive mode", "error");
 				return;
 			}

@@ -4,6 +4,7 @@ import type {
 	ProviderStreamOptions,
 	UserMessage,
 } from "@earendil-works/pi-ai";
+import { uuidv7 } from "@earendil-works/pi-ai";
 import { complete, getModel } from "@earendil-works/pi-ai/compat";
 import type {
 	ExtensionAPI,
@@ -134,7 +135,7 @@ const buildSummaryPrompt = (conversationText: string): string =>
 	].join("\n");
 
 const showSummaryUi = async (summary: string, ctx: ExtensionCommandContext) => {
-	if (!ctx.hasUI) {
+	if (ctx.mode !== "tui") {
 		return;
 	}
 
@@ -218,9 +219,14 @@ export default function (pi: ExtensionAPI) {
 			const requestOptions: ProviderStreamOptions = {
 				apiKey: auth.apiKey,
 				reasoningEffort: "high",
+				cacheRetention: "none",
+				sessionId: uuidv7(),
 			};
 			if (auth.headers !== undefined) {
 				requestOptions.headers = auth.headers;
+			}
+			if (auth.env !== undefined) {
+				requestOptions.env = auth.env;
 			}
 
 			const response = await complete(

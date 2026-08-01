@@ -40,7 +40,7 @@ function addToolGuidance(
 
 	if (hasTool("bash")) {
 		parts.push(
-			"• Execute commands with the `bash` tool. Use it for file operations like `ls`, `find`, `grep`.",
+			"• Execute commands with the `bash` tool. Use it for file operations like `ls`, `find`, `grep`, `rg`, `fzf`.",
 		);
 	}
 
