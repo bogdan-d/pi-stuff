@@ -40,6 +40,14 @@ the run ID. Arrow keys or
 cannot be cancelled. Tool timelines retain bounded path-oriented summaries;
 raw arguments, results, shell commands, messages, and reasoning are not stored.
 
+Oversized foreground and background output shares the same private temporary
+layout at `${TMPDIR}/pi-subagent-XXXXXX/output.md`, with the output file mode
+set to `0o600`. Files become cleanup-eligible seven days after creation. A
+best-effort cleanup pass runs at later session starts, so files can remain
+longer; lifecycle events and background eviction do not delete them
+immediately. Host temporary-directory policy may delete files sooner, so full
+output paths are not durable storage.
+
 Only one non-terminal implementation may target a resolved working directory
 by default. Do not duplicate a background implementation's work.
 `allowConcurrentWrites: true` accepts the overlap risk for partitioned work;

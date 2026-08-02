@@ -6,6 +6,7 @@ import { getEnabledAgentCatalog, loadAgentCatalog } from "./agents.js";
 import { registerBackgroundAgentTools } from "./background-tools.js";
 import { registerAgentCommands } from "./commands.js";
 import { registerAgentInspector } from "./inspector.js";
+import { collectStaleSubagentOutputs } from "./output-files.js";
 import { finalizeRun } from "./results.js";
 import { AgentRunHistory, RUN_ENTRY_TYPE } from "./run-history.js";
 import { CHILD_ENV, runSubagent } from "./runner.js";
@@ -32,7 +33,10 @@ export function notifyBackgroundSettled(
 	}
 }
 
-export default function (pi: ExtensionAPI): void {
+export default function (
+	pi: ExtensionAPI,
+	collectOutputs: () => Promise<void> = collectStaleSubagentOutputs,
+): void {
 	if (process.env[CHILD_ENV] === "1") return;
 	const catalog = loadAgentCatalog();
 	const history = new AgentRunHistory({
@@ -56,7 +60,10 @@ export default function (pi: ExtensionAPI): void {
 	const reconstruct = (ctx: ExtensionContext) => {
 		history.reconstruct(ctx.sessionManager.getBranch());
 	};
-	pi.on("session_start", async (_event, ctx) => reconstruct(ctx));
+	pi.on("session_start", async (_event, ctx) => {
+		reconstruct(ctx);
+		await collectOutputs();
+	});
 	pi.on("session_tree", async (_event, ctx) => reconstruct(ctx));
 	pi.on("session_shutdown", async () => manager.shutdown());
 }

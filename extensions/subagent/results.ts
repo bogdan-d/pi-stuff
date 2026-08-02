@@ -1,6 +1,3 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -8,6 +5,7 @@ import {
 	truncateHead,
 } from "@earendil-works/pi-coding-agent";
 import { getFinalOutput } from "./messages.js";
+import { createSubagentOutputFile } from "./output-files.js";
 import { isSubagentFailure } from "./runner.js";
 import type { ChildRunDetails, PersistedRunDetails } from "./types.js";
 
@@ -38,9 +36,7 @@ export async function prepareOutput(output: string): Promise<{
 	});
 	if (!truncation.truncated) return { text: output, truncated: false };
 
-	const directory = await mkdtemp(join(tmpdir(), "pi-subagent-"));
-	const fullOutputPath = join(directory, "output.md");
-	await writeFile(fullOutputPath, output, { encoding: "utf8", mode: 0o600 });
+	const fullOutputPath = await createSubagentOutputFile(output);
 	const notice = `[Output truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Full output: ${fullOutputPath}]`;
 	return {
 		text: `${truncation.content}\n\n${notice}`,
