@@ -8,7 +8,7 @@ import type {
 	RoleName,
 } from "./types.js";
 
-export const RUN_ENTRY_TYPE = "delegated-agent-run-v1";
+export const RUN_ENTRY_TYPE = "subagent-run-v1";
 const TERMINAL = new Set<BackgroundRunStatus>([
 	"completed",
 	"failed",
@@ -30,7 +30,7 @@ export type AgentRunRegistration = Omit<
 	"version" | "timeline" | "omittedTimelineEvents"
 >;
 
-export type DelegatedAgentRuntimeEvent =
+export type SubagentRuntimeEvent =
 	| {
 			type: "tool_start";
 			id: string;
@@ -194,7 +194,7 @@ export class AgentRunHistory {
 		return clone(run);
 	}
 
-	recordEvent(id: string, event: DelegatedAgentRuntimeEvent): void {
+	recordEvent(id: string, event: SubagentRuntimeEvent): void {
 		const run = this.#require(id);
 		if (event.type === "usage") {
 			run.usage = clone(event.usage);
@@ -316,7 +316,7 @@ export class AgentRunHistory {
 			if (entry.type !== "message" || entry.message.role !== "assistant")
 				continue;
 			for (const content of entry.message.content) {
-				if (content.type !== "toolCall" || content.name !== "delegate_agent")
+				if (content.type !== "toolCall" || content.name !== "subagent")
 					continue;
 				const args = content.arguments;
 				if (
@@ -334,7 +334,7 @@ export class AgentRunHistory {
 			if (entry.type !== "message" || entry.message.role !== "toolResult")
 				continue;
 			const message = entry.message;
-			if (message.toolName !== "delegate_agent") continue;
+			if (message.toolName !== "subagent") continue;
 			const details = message.details as Record<string, unknown> | undefined;
 			if (!details) continue;
 			const role = details["role"] ?? details["profile"];
@@ -362,8 +362,7 @@ export class AgentRunHistory {
 					task:
 						typeof details["task"] === "string"
 							? details["task"]
-							: (tasks.get(message.toolCallId) ??
-								"(legacy delegated-agent task)"),
+							: (tasks.get(message.toolCallId) ?? "(legacy subagent task)"),
 					cwd:
 						typeof details["cwd"] === "string" ? details["cwd"] : "(unknown)",
 					model:
@@ -400,7 +399,7 @@ export class AgentRunHistory {
 						? details["agent"]
 						: (role as RoleName),
 				role: role as RoleName,
-				task: tasks.get(message.toolCallId) ?? "(legacy delegated-agent task)",
+				task: tasks.get(message.toolCallId) ?? "(legacy subagent task)",
 				cwd: typeof details["cwd"] === "string" ? details["cwd"] : "(unknown)",
 				model:
 					typeof details["model"] === "string"
@@ -475,7 +474,7 @@ export class AgentRunHistory {
 
 	#require(id: string): AgentRunSnapshot {
 		const run = this.#runs.get(id);
-		if (!run) throw new Error(`Unknown delegated agent history run: ${id}`);
+		if (!run) throw new Error(`Unknown subagent history run: ${id}`);
 		return run;
 	}
 }

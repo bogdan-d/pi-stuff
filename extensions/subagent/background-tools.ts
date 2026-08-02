@@ -1,6 +1,6 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { DelegatedAgentManager } from "./runs.js";
+import type { SubagentManager } from "./runs.js";
 import type { BackgroundRunResult } from "./types.js";
 
 function formatRun(run: BackgroundRunResult): string {
@@ -19,7 +19,7 @@ function formatRunSummary(run: BackgroundRunResult): string {
 	return `Run ID: ${run.id}\nAgent: ${run.agent}\nStatus: ${run.status}`;
 }
 
-export function createBackgroundAgentTools(manager: DelegatedAgentManager) {
+export function createBackgroundAgentTools(manager: SubagentManager) {
 	const ResultParams = Type.Object({
 		id: Type.Optional(
 			Type.String({ description: "Background run ID. Omit to list runs." }),
@@ -36,18 +36,18 @@ export function createBackgroundAgentTools(manager: DelegatedAgentManager) {
 		typeof ResultParams,
 		BackgroundRunResult | BackgroundRunResult[]
 	>({
-		name: "delegate_agent_result",
-		label: "Delegated Agent Result",
+		name: "subagent_result",
+		label: "Subagent Result",
 		description:
-			"List background delegated-agent runs or retrieve one result, optionally waiting for completion.",
-		promptSnippet: "List or retrieve background delegated-agent results",
+			"List background subagent runs or retrieve one result, optionally waiting for completion.",
+		promptSnippet: "List or retrieve background subagent results",
 		promptGuidelines: [
-			"delegate_agent_result: Use an accepted background run ID to inspect or wait for its result; interrupting a wait does not cancel the run.",
+			"subagent_result: Use an accepted background run ID to inspect or wait for its result; interrupting a wait does not cancel the run.",
 		],
 		parameters: ResultParams,
 		async execute(_toolCallId, params, signal) {
 			if (params.wait && !params.id)
-				throw new Error("delegate_agent_result wait requires an id.");
+				throw new Error("subagent_result wait requires an id.");
 			if (!params.id) {
 				const runs = manager.list();
 				return {
@@ -56,7 +56,7 @@ export function createBackgroundAgentTools(manager: DelegatedAgentManager) {
 							type: "text",
 							text: runs.length
 								? runs.map(formatRunSummary).join("\n\n")
-								: "No background delegated-agent runs.",
+								: "No background subagent runs.",
 						},
 					],
 					details: runs,
@@ -73,10 +73,10 @@ export function createBackgroundAgentTools(manager: DelegatedAgentManager) {
 	});
 
 	const cancel = defineTool<typeof CancelParams, BackgroundRunResult>({
-		name: "delegate_agent_cancel",
-		label: "Cancel Delegated Agent",
-		description: "Cancel a queued or running background delegated-agent run.",
-		promptSnippet: "Cancel a background delegated-agent run",
+		name: "subagent_cancel",
+		label: "Cancel Subagent",
+		description: "Cancel a queued or running background subagent run.",
+		promptSnippet: "Cancel a background subagent run",
 		parameters: CancelParams,
 		async execute(_toolCallId, params) {
 			const before = manager.get(params.id);
@@ -96,7 +96,7 @@ export function createBackgroundAgentTools(manager: DelegatedAgentManager) {
 
 export function registerBackgroundAgentTools(
 	pi: ExtensionAPI,
-	manager: DelegatedAgentManager,
+	manager: SubagentManager,
 ): void {
 	for (const tool of createBackgroundAgentTools(manager)) pi.registerTool(tool);
 }

@@ -1,6 +1,6 @@
-# Delegated agents
+# Subagents
 
-`delegate_agent` provides six built-in agents (`planning`, `implementation`,
+`subagent` provides six built-in agents (`planning`, `implementation`,
 `verification`, `review`, `explore-shallow`, and `explore-deep`) plus optional
 named specializations.
 
@@ -14,14 +14,14 @@ not a filesystem or tool sandbox.
 ## Parallel and background runs
 
 Independent foreground calls in one tool batch run in parallel and return their
-own streamed result. Keep parallel tasks independent. Do not combine a delegated
+own streamed result. Keep parallel tasks independent. Do not combine a subagent
 implementation with local mutating tools in the same batch.
 
 Set `background: true` to return a run ID immediately. Four background runs may
 execute at once; additional runs wait in FIFO order. Use
-`delegate_agent_result({})` to list runs, `delegate_agent_result({ id })` to
-inspect one, or `delegate_agent_result({ id, wait: true })` to wait. Interrupting
-that wait does not cancel the child. Use `delegate_agent_cancel({ id })` to
+`subagent_result({})` to list runs, `subagent_result({ id })` to
+inspect one, or `subagent_result({ id, wait: true })` to wait. Interrupting
+that wait does not cancel the child. Use `subagent_cancel({ id })` to
 cancel queued or running work.
 
 Active runs live only in the current runtime. Reload, session replacement, or
@@ -44,9 +44,9 @@ by default. Do not duplicate a background implementation's work.
 `allowConcurrentWrites: true` accepts the overlap risk for partitioned work;
 it is not filesystem isolation and cannot guard against parent edits.
 
-Define custom agents in `${PI_CODING_AGENT_DIR}/pi-delegated-agents.json`. When
+Define custom agents in `${PI_CODING_AGENT_DIR}/pi-subagent.json`. When
 `PI_CODING_AGENT_DIR` is unset or blank, the path is
-`~/.pi/agent/pi-delegated-agents.json`.
+`~/.pi/agent/pi-subagent.json`.
 
 ```json
 {
@@ -86,8 +86,8 @@ The optional top-level `overrides` object changes `model`, `thinking`, and/or
 prompts, descriptions, names, or roles. A built-in override does not affect
 custom agents using that role. Delete an override field to restore its agent,
 shipped, or parent fallback. Disabled agents remain configurable but disappear
-from the `delegate_agent` catalog. When every agent is disabled, the extension
-does not register `delegate_agent`. Thinking may be `off`, `minimal`, `low`,
+from the `subagent` catalog. When every agent is disabled, the extension
+does not register `subagent`. Thinking may be `off`, `minimal`, `low`,
 `medium`, `high`, `xhigh`, or `max`.
 
 The built-in role prompt always runs before the custom prompt. Custom agents

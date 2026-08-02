@@ -5,8 +5,8 @@ import {
 	AgentInspectorComponent,
 	formatAgentSummary,
 	registerAgentInspector,
-} from "../extensions/delegated-agents/inspector.js";
-import { AgentRunHistory } from "../extensions/delegated-agents/run-history.js";
+} from "../extensions/subagent/inspector.js";
+import { AgentRunHistory } from "../extensions/subagent/run-history.js";
 
 const theme = {
 	fg: (_color: string, text: string) => text,
@@ -42,7 +42,7 @@ function historyWithRuns() {
 	return history;
 }
 
-describe("delegated-agent inspector", () => {
+describe("subagent inspector", () => {
 	test("renders mixed and narrow states within width", () => {
 		const component = new AgentInspectorComponent({
 			history: historyWithRuns(),
@@ -120,7 +120,7 @@ describe("delegated-agent inspector", () => {
 		});
 		expect(notifications).toHaveLength(2);
 		expect(notifications[0]).toContain("active");
-		expect(formatAgentSummary(new AgentRunHistory())).toContain("No delegated");
+		expect(formatAgentSummary(new AgentRunHistory())).toContain("No subagent");
 	});
 
 	test("wraps detail text and reveals in-memory tool arguments", () => {

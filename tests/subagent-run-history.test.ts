@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	AgentRunHistory,
 	RUN_ENTRY_TYPE,
-} from "../extensions/delegated-agents/run-history.js";
+} from "../extensions/subagent/run-history.js";
 
 function registration(
 	id: string,
@@ -229,7 +229,7 @@ describe("AgentRunHistory", () => {
 						{
 							type: "toolCall",
 							id: "call-1",
-							name: "delegate_agent",
+							name: "subagent",
 							arguments: { agent: "review", task: "Legacy task" },
 						},
 					],
@@ -243,7 +243,7 @@ describe("AgentRunHistory", () => {
 				message: {
 					role: "toolResult",
 					toolCallId: "call-1",
-					toolName: "delegate_agent",
+					toolName: "subagent",
 					content: [{ type: "text", text: "legacy output" }],
 					isError: false,
 					details: {
@@ -274,7 +274,7 @@ describe("AgentRunHistory", () => {
 				message: {
 					role: "toolResult",
 					toolCallId: "call-1",
-					toolName: "delegate_agent",
+					toolName: "subagent",
 					content: [{ type: "text", text: "started" }],
 					isError: false,
 					details: {

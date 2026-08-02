@@ -3,10 +3,7 @@ import { resolve } from "node:path";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { FinalizedRun } from "./results.js";
 import { AgentRunHistory } from "./run-history.js";
-import {
-	DelegatedAgentRunError,
-	type RunDelegatedAgentOptions,
-} from "./runner.js";
+import { type RunSubagentOptions, SubagentRunError } from "./runner.js";
 import type {
 	AgentRunSnapshot,
 	BackgroundLaunchDetails,
@@ -24,7 +21,7 @@ const TERMINAL = new Set<BackgroundRunStatus>([
 
 interface RunRecord extends BackgroundRunResult {
 	ordinal: number;
-	options: RunDelegatedAgentOptions;
+	options: RunSubagentOptions;
 	controller?: AbortController;
 	completion: Promise<void>;
 	resolveCompletion: () => void;
@@ -32,8 +29,8 @@ interface RunRecord extends BackgroundRunResult {
 	usageReported: boolean;
 }
 
-export interface DelegatedAgentManagerOptions {
-	run: (options: RunDelegatedAgentOptions) => Promise<ChildRunDetails>;
+export interface SubagentManagerOptions {
+	run: (options: RunSubagentOptions) => Promise<ChildRunDetails>;
 	finalize: (details: ChildRunDetails) => Promise<FinalizedRun>;
 	onBackgroundSettled?: (run: BackgroundRunResult) => void | Promise<void>;
 	history?: AgentRunHistory;
@@ -45,7 +42,7 @@ export interface DelegatedAgentManagerOptions {
 }
 
 export interface StartRunOptions {
-	run: RunDelegatedAgentOptions;
+	run: RunSubagentOptions;
 	allowConcurrentWrites?: boolean;
 }
 
@@ -60,10 +57,10 @@ export interface ForegroundRunResult {
 	finalized: FinalizedRun;
 }
 
-export class DelegatedAgentManager {
-	readonly #run: DelegatedAgentManagerOptions["run"];
-	readonly #finalize: DelegatedAgentManagerOptions["finalize"];
-	readonly #onBackgroundSettled?: DelegatedAgentManagerOptions["onBackgroundSettled"];
+export class SubagentManager {
+	readonly #run: SubagentManagerOptions["run"];
+	readonly #finalize: SubagentManagerOptions["finalize"];
+	readonly #onBackgroundSettled?: SubagentManagerOptions["onBackgroundSettled"];
 	readonly #maxConcurrentBackground: number;
 	readonly #maxRecords: number;
 	readonly #now: () => number;
@@ -79,7 +76,7 @@ export class DelegatedAgentManager {
 	#closed = false;
 	#shutdownPromise?: Promise<void>;
 
-	constructor(options: DelegatedAgentManagerOptions) {
+	constructor(options: SubagentManagerOptions) {
 		this.#run = options.run;
 		this.#finalize = options.finalize;
 		this.#onBackgroundSettled = options.onBackgroundSettled;
@@ -160,7 +157,7 @@ export class DelegatedAgentManager {
 			try {
 				details = await promise;
 			} catch (error) {
-				if (!(error instanceof DelegatedAgentRunError)) {
+				if (!(error instanceof SubagentRunError)) {
 					this.history.update(id, {
 						status: signal.aborted ? "cancelled" : "failed",
 						completedAt: this.#now(),
@@ -286,11 +283,10 @@ export class DelegatedAgentManager {
 		const record = this.#require(id);
 		if (TERMINAL.has(record.status)) return this.#snapshot(record);
 		if (signal?.aborted)
-			throw new Error("Waiting for delegated agent result aborted.");
+			throw new Error("Waiting for subagent result aborted.");
 		let abort: (() => void) | undefined;
 		const aborted = new Promise<never>((_resolve, reject) => {
-			abort = () =>
-				reject(new Error("Waiting for delegated agent result aborted."));
+			abort = () => reject(new Error("Waiting for subagent result aborted."));
 			signal?.addEventListener("abort", abort, { once: true });
 		});
 		try {
@@ -393,7 +389,7 @@ export class DelegatedAgentManager {
 				},
 			});
 		} catch (error) {
-			if (!(error instanceof DelegatedAgentRunError)) {
+			if (!(error instanceof SubagentRunError)) {
 				this.#settleError(record, error);
 				return;
 			}
@@ -584,13 +580,12 @@ export class DelegatedAgentManager {
 
 	#require(id: string): RunRecord {
 		const record = this.#runs.get(id);
-		if (!record) throw new Error(`Unknown delegated agent run: ${id}`);
+		if (!record) throw new Error(`Unknown subagent run: ${id}`);
 		return record;
 	}
 
 	#assertOpen(): void {
-		if (this.#closed)
-			throw new Error("Delegated agent manager is shutting down.");
+		if (this.#closed) throw new Error("Subagent manager is shutting down.");
 	}
 
 	#allocateId(): string {
@@ -598,6 +593,6 @@ export class DelegatedAgentManager {
 			const id = this.#createId();
 			if (id && !this.#runs.has(id) && !this.history.has(id)) return id;
 		}
-		throw new Error("Unable to allocate delegated agent run ID.");
+		throw new Error("Unable to allocate subagent run ID.");
 	}
 }

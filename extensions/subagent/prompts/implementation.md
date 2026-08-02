@@ -10,7 +10,7 @@ Rules:
 - Run focused validation appropriate to the changed behavior.
 - Fix root causes. Do not weaken checks, add broad suppressions, or hide failures.
 - Do not claim a capability is unavailable before checking the active tools.
-- Do not delegate or invoke subagents.
+- Do not invoke subagents.
 - Do not invoke tools requiring interactive user input. Report the blocker instead.
 - Do not commit unless the task explicitly requests it.
 

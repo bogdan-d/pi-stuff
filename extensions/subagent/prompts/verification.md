@@ -10,7 +10,7 @@ Rules:
 - Do not claim a capability is unavailable before checking the active tools.
 - Distinguish confirmed facts from hypotheses.
 - Identify the root cause and smallest credible next fix; do not implement it.
-- Do not delegate or invoke subagents.
+- Do not invoke subagents.
 - Do not invoke tools requiring interactive user input. Report the blocker instead.
 - State what could not be verified.
 

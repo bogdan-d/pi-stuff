@@ -38,7 +38,7 @@ export async function prepareOutput(output: string): Promise<{
 	});
 	if (!truncation.truncated) return { text: output, truncated: false };
 
-	const directory = await mkdtemp(join(tmpdir(), "pi-delegated-agent-"));
+	const directory = await mkdtemp(join(tmpdir(), "pi-subagent-"));
 	const fullOutputPath = join(directory, "output.md");
 	await writeFile(fullOutputPath, output, { encoding: "utf8", mode: 0o600 });
 	const notice = `[Output truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Full output: ${fullOutputPath}]`;
@@ -82,5 +82,5 @@ export async function finalizeRun(
 }
 
 export function formatRunFailure(agent: string, error: string): string {
-	return `Delegated agent ${agent} failed: ${error}`;
+	return `Subagent ${agent} failed: ${error}`;
 }

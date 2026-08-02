@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises";
 import {
 	finalizeRun,
 	formatRunFailure,
-} from "../extensions/delegated-agents/results.js";
+} from "../extensions/subagent/results.js";
 
 const usage = {
 	input: 1,
@@ -40,7 +40,7 @@ function details(text = "hello", overrides = {}) {
 	} as any;
 }
 
-describe("delegated agent result finalization", () => {
+describe("subagent result finalization", () => {
 	test("keeps normal and empty output compact", async () => {
 		const normal = await finalizeRun(details());
 		expect(normal.output).toBe("hello");
@@ -68,7 +68,7 @@ describe("delegated agent result finalization", () => {
 			).error,
 		).toBe("stderr");
 		expect(formatRunFailure("review", "bad")).toBe(
-			"Delegated agent review failed: bad",
+			"Subagent review failed: bad",
 		);
 	});
 

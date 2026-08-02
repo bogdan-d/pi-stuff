@@ -14,7 +14,7 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import type { AgentRunHistory, AgentRunListItem } from "./run-history.js";
-import type { DelegatedAgentManager } from "./runs.js";
+import type { SubagentManager } from "./runs.js";
 import type { AgentRunSnapshot } from "./types.js";
 
 const OUTPUT_PAGE_BYTES = 64 * 1024;
@@ -68,7 +68,7 @@ function formatTime(value: number | undefined): string {
 
 export function formatAgentSummary(history: AgentRunHistory): string {
 	const runs = history.listSummaries();
-	if (!runs.length) return "No delegated-agent runs on this session branch.";
+	if (!runs.length) return "No subagent runs on this session branch.";
 	return runs
 		.slice(0, 12)
 		.map(
@@ -93,7 +93,7 @@ export class AgentInspectorComponent implements Focusable {
 	#summaries: AgentRunListItem[];
 	#disposed = false;
 	readonly #history: AgentRunHistory;
-	readonly #manager: DelegatedAgentManager;
+	readonly #manager: SubagentManager;
 	readonly #theme: Theme;
 	readonly #requestRender: () => void;
 	readonly #done: () => void;
@@ -104,7 +104,7 @@ export class AgentInspectorComponent implements Focusable {
 
 	constructor(options: {
 		history: AgentRunHistory;
-		manager: DelegatedAgentManager;
+		manager: SubagentManager;
 		theme: Theme;
 		requestRender: () => void;
 		done: () => void;
@@ -236,14 +236,14 @@ export class AgentInspectorComponent implements Focusable {
 			(run) => run.status === "queued" || run.status === "running",
 		).length;
 		const lines = [
-			` ${this.#theme.fg("accent", "Delegated agents")}  ${active} active · ${runs.length - active} finished`,
+			` ${this.#theme.fg("accent", "Subagents")}  ${active} active · ${runs.length - active} finished`,
 			this.#view === "filter"
 				? ` Filter: ${this.#filter}_`
 				: this.#filter
 					? ` Filter: ${this.#filter}`
 					: "",
 		];
-		if (!runs.length) lines.push(" No matching delegated-agent runs.");
+		if (!runs.length) lines.push(" No matching subagent runs.");
 		else if (runs.length > 20)
 			lines.push(
 				` ${this.#theme.fg("dim", `showing ${this.#listOffset + 1}-${Math.min(runs.length, this.#listOffset + 20)} of ${runs.length}`)}`,
@@ -276,7 +276,7 @@ export class AgentInspectorComponent implements Focusable {
 
 	#renderDetail(): string[] {
 		const run = this.#selected();
-		if (!run) return [" Delegated agent no longer available."];
+		if (!run) return [" Subagent no longer available."];
 		const usage = run.usage
 			? `${run.usage.totalTokens} tokens · $${run.usage.cost.total.toFixed(4)}`
 			: "usage unavailable";
@@ -459,7 +459,7 @@ export class AgentInspectorComponent implements Focusable {
 export function registerAgentInspector(
 	pi: ExtensionAPI,
 	history: AgentRunHistory,
-	manager: DelegatedAgentManager,
+	manager: SubagentManager,
 ): void {
 	const openInspector = async (ctx: ExtensionContext) => {
 		if (ctx.mode !== "tui") {
@@ -486,11 +486,11 @@ export function registerAgentInspector(
 		);
 	};
 	pi.registerCommand("agents", {
-		description: "Inspect delegated agents on the current session branch",
+		description: "Inspect subagents on the current session branch",
 		handler: async (_args, ctx) => openInspector(ctx),
 	});
 	pi.registerShortcut(Key.ctrlAlt("a"), {
-		description: "Inspect delegated agents",
+		description: "Inspect subagents",
 		handler: openInspector,
 	});
 }

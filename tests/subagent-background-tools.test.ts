@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import {
 	createBackgroundAgentTools,
 	registerBackgroundAgentTools,
-} from "../extensions/delegated-agents/background-tools.js";
-import { notifyBackgroundSettled } from "../extensions/delegated-agents/index.js";
-import { DelegatedAgentManager } from "../extensions/delegated-agents/runs.js";
+} from "../extensions/subagent/background-tools.js";
+import { notifyBackgroundSettled } from "../extensions/subagent/index.js";
+import { SubagentManager } from "../extensions/subagent/runs.js";
 
 const usage = {
 	input: 1,
@@ -46,7 +46,7 @@ const finalized = {
 } as any;
 
 function manager(run = async () => child) {
-	return new DelegatedAgentManager({
+	return new SubagentManager({
 		run,
 		finalize: async () => finalized,
 		createId: () => "run-1",
@@ -57,7 +57,7 @@ async function execute(tool: any, params: any, signal?: AbortSignal) {
 	return tool.execute("call", params, signal, undefined, {} as any);
 }
 
-describe("background delegated-agent tools", () => {
+describe("background subagent tools", () => {
 	test("delivers completion on next turn without waking parent", () => {
 		const calls: any[] = [];
 		notifyBackgroundSettled(
@@ -73,7 +73,7 @@ describe("background delegated-agent tools", () => {
 				createdAt: 1,
 			},
 		);
-		expect(calls[0][0].content).toContain("delegate_agent_result");
+		expect(calls[0][0].content).toContain("subagent_result");
 		expect(calls[0][0].content).not.toContain("answer");
 		expect(calls[0][1]).toEqual({
 			deliverAs: "nextTurn",
@@ -96,7 +96,7 @@ describe("background delegated-agent tools", () => {
 			{ registerTool: (tool: any) => names.push(tool.name) } as any,
 			manager(),
 		);
-		expect(names).toEqual(["delegate_agent_result", "delegate_agent_cancel"]);
+		expect(names).toEqual(["subagent_result", "subagent_cancel"]);
 	});
 
 	test("lists, waits, reports result, and claims usage once", async () => {

@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import {
 	runtimeEventFromRpcEvent,
 	summarizeToolCall,
-} from "../extensions/delegated-agents/runner.js";
+} from "../extensions/subagent/runner.js";
 
-describe("delegated-agent runtime events", () => {
+describe("subagent runtime events", () => {
 	test("keeps path summaries but omits commands and unknown arguments", () => {
 		expect(summarizeToolCall("read", { path: "src/../secret.ts" })).toBe(
 			"secret.ts",

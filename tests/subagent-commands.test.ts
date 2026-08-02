@@ -18,21 +18,19 @@ import {
 	runAgentList,
 	runAgentOverride,
 	runAgentRemove,
-} from "../extensions/delegated-agents/commands.js";
+} from "../extensions/subagent/commands.js";
 import {
 	loadCustomAgentConfig,
 	writeCustomAgentConfig,
-} from "../extensions/delegated-agents/config.js";
-import { ROLES } from "../extensions/delegated-agents/roles.js";
+} from "../extensions/subagent/config.js";
+import { ROLES } from "../extensions/subagent/roles.js";
 
 const directories: string[] = [];
 
 function configPath(): string {
-	const directory = mkdtempSync(
-		join(tmpdir(), "delegated-agent-command-test-"),
-	);
+	const directory = mkdtempSync(join(tmpdir(), "subagent-command-test-"));
 	directories.push(directory);
-	return join(directory, "pi-delegated-agents.json");
+	return join(directory, "pi-subagent.json");
 }
 
 afterEach(() => {
@@ -77,7 +75,7 @@ class FakeContext implements AgentCommandContext {
 	}
 }
 
-describe("delegated agent commands", () => {
+describe("subagent commands", () => {
 	test("adds a validated agent and reloads", async () => {
 		const path = configPath();
 		const ctx = new FakeContext();

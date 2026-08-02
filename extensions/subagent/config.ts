@@ -11,7 +11,7 @@ import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { ROLE_NAMES } from "./roles.js";
 import type { AgentOverride, CustomAgentConfig, RoleName } from "./types.js";
 
-export const CONFIG_FILENAME = "pi-delegated-agents.json";
+export const CONFIG_FILENAME = "pi-subagent.json";
 
 export const AGENT_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 const ENTRY_FIELDS = new Set([

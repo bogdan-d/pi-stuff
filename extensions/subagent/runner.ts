@@ -11,18 +11,18 @@ import type {
 import { getPackageDir, RpcClient } from "@earendil-works/pi-coding-agent";
 import { getFinalOutput, getToolCalls } from "./messages.js";
 import { ROLES } from "./roles.js";
-import type { DelegatedAgentRuntimeEvent } from "./run-history.js";
+import type { SubagentRuntimeEvent } from "./run-history.js";
 import type { AgentSpec, ChildRunDetails } from "./types.js";
 
-export const CHILD_ENV = "PI_DELEGATED_AGENT_CHILD";
+export const CHILD_ENV = "PI_SUBAGENT_CHILD";
 const RUN_TIMEOUT_MS = 30 * 60 * 1_000;
 
-export class DelegatedAgentRunError extends Error {
+export class SubagentRunError extends Error {
 	readonly details: ChildRunDetails;
 
 	constructor(message: string, details: ChildRunDetails, cause: unknown) {
 		super(message, { cause });
-		this.name = "DelegatedAgentRunError";
+		this.name = "SubagentRunError";
 		this.details = details;
 	}
 }
@@ -84,14 +84,14 @@ export function buildChildArgs(
 	if (spec.specializationPrompt) {
 		args.push(
 			"--append-system-prompt",
-			`Custom delegated-agent specialization:\n${spec.specializationPrompt}`,
+			`Custom subagent specialization:\n${spec.specializationPrompt}`,
 		);
 	}
 	if (thinking) args.push("--thinking", thinking);
 	return args;
 }
 
-export interface RunDelegatedAgentOptions {
+export interface RunSubagentOptions {
 	spec: AgentSpec;
 	task: string;
 	cwd: string;
@@ -99,7 +99,7 @@ export interface RunDelegatedAgentOptions {
 	thinking?: ModelThinkingLevel;
 	signal?: AbortSignal;
 	onUpdate?: AgentToolUpdateCallback<ChildRunDetails>;
-	onEvent?: (event: DelegatedAgentRuntimeEvent) => void;
+	onEvent?: (event: SubagentRuntimeEvent) => void;
 }
 
 function oneLine(value: unknown, fallback: string): string {
@@ -130,7 +130,7 @@ export function runtimeEventFromRpcEvent(event: {
 	toolName?: string;
 	args?: unknown;
 	isError?: boolean;
-}): DelegatedAgentRuntimeEvent | undefined {
+}): SubagentRuntimeEvent | undefined {
 	if (
 		(event.type !== "tool_execution_start" &&
 			event.type !== "tool_execution_end") ||
@@ -159,8 +159,8 @@ export function runtimeEventFromRpcEvent(event: {
 	};
 }
 
-export async function runDelegatedAgent(
-	options: RunDelegatedAgentOptions,
+export async function runSubagent(
+	options: RunSubagentOptions,
 ): Promise<ChildRunDetails> {
 	const details: ChildRunDetails = {
 		agent: options.spec.name,
@@ -184,7 +184,7 @@ export async function runDelegatedAgent(
 		args,
 	});
 	const prompt = [
-		`Run as the ${ROLES[options.spec.role].label} delegated agent inside an isolated no-session subprocess.`,
+		`Run as the ${ROLES[options.spec.role].label} subagent inside an isolated no-session subprocess.`,
 		"You receive no parent conversation. Treat this standalone task as the complete brief.",
 		`Agent: ${options.spec.name}`,
 		`Role: ${options.spec.role}`,
@@ -196,7 +196,7 @@ export async function runDelegatedAgent(
 			try {
 				options.onEvent?.(runtimeEvent);
 			} catch {
-				// Runtime observers cannot own or disrupt the delegated run.
+				// Runtime observers cannot own or disrupt the subagent run.
 			}
 		}
 		if (event.type !== "message_end" || event.message.role !== "assistant") {
@@ -210,7 +210,7 @@ export async function runDelegatedAgent(
 				model: details.model,
 			});
 		} catch {
-			// Runtime observers cannot own or disrupt the delegated run.
+			// Runtime observers cannot own or disrupt the subagent run.
 		}
 		const output = getFinalOutput(details.messages);
 		if (!output && getToolCalls(details.messages).length === 0) return;
@@ -230,10 +230,10 @@ export async function runDelegatedAgent(
 
 	let failure: unknown;
 	try {
-		if (options.signal?.aborted) throw new Error("Delegated agent aborted.");
+		if (options.signal?.aborted) throw new Error("Subagent aborted.");
 		await client.start();
 		options.signal?.addEventListener("abort", abort, { once: true });
-		if (options.signal?.aborted) throw new Error("Delegated agent aborted.");
+		if (options.signal?.aborted) throw new Error("Subagent aborted.");
 		await client.setAutoCompaction(true);
 		await client.setAutoRetry(true);
 		await client.promptAndWait(prompt, undefined, RUN_TIMEOUT_MS);
@@ -260,7 +260,7 @@ export async function runDelegatedAgent(
 				: message;
 		details.stopReason = options.signal?.aborted ? "aborted" : "error";
 		details.errorMessage = fullMessage;
-		throw new DelegatedAgentRunError(fullMessage, details, failure);
+		throw new SubagentRunError(fullMessage, details, failure);
 	}
 
 	return details;

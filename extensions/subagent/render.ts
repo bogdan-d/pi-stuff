@@ -39,7 +39,7 @@ function formatToolCall(name: string, args: Record<string, unknown>): string {
 	return `${name} ${JSON.stringify(args)}`;
 }
 
-export function renderDelegateCall(
+export function renderSubagentCall(
 	args: { agent?: string; profile?: string; task?: string },
 	theme: Theme,
 ) {
@@ -48,13 +48,13 @@ export function renderDelegateCall(
 	const agent = args.agent ?? args.profile;
 	const selected = agent ? ` ${theme.fg("accent", `[${agent}]`)}` : "";
 	return new Text(
-		`${theme.fg("toolTitle", theme.bold("delegate_agent"))}${selected}\n  ${theme.fg("dim", preview)}`,
+		`${theme.fg("toolTitle", theme.bold("subagent"))}${selected}\n  ${theme.fg("dim", preview)}`,
 		0,
 		0,
 	);
 }
 
-export function renderDelegateResult(
+export function renderSubagentResult(
 	result: {
 		content: Array<{ type: string; text?: string }>;
 		details: RenderableRunDetails;
@@ -70,7 +70,7 @@ export function renderDelegateResult(
 		const header = `${theme.fg("warning", `… ${state}`)} ${theme.fg("accent", background.agent)} · ${ROLES[background.role].label} ${theme.fg("dim", background.model)} · ${background.id}`;
 		return new Text(
 			options.expanded
-				? `${header}\n${theme.fg("dim", `Use delegate_agent_result with ID ${background.id} to retrieve the result.`)}`
+				? `${header}\n${theme.fg("dim", `Use subagent_result with ID ${background.id} to retrieve the result.`)}`
 				: header,
 			0,
 			0,

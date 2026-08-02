@@ -147,7 +147,7 @@ export interface BackgroundRunResult extends BackgroundRunSummary {
 	fullOutputPath?: string;
 }
 
-export type DelegateRunDetails =
+export type SubagentRunDetails =
 	| ChildRunDetails
 	| PersistedRunDetails
 	| BackgroundLaunchDetails;
@@ -162,4 +162,4 @@ export interface LegacyRunDetails {
 	stderr?: string;
 }
 
-export type RenderableRunDetails = DelegateRunDetails | LegacyRunDetails;
+export type RenderableRunDetails = SubagentRunDetails | LegacyRunDetails;

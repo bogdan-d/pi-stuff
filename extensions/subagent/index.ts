@@ -8,9 +8,9 @@ import { registerAgentCommands } from "./commands.js";
 import { registerAgentInspector } from "./inspector.js";
 import { finalizeRun } from "./results.js";
 import { AgentRunHistory, RUN_ENTRY_TYPE } from "./run-history.js";
-import { CHILD_ENV, runDelegatedAgent } from "./runner.js";
-import { DelegatedAgentManager } from "./runs.js";
-import { registerDelegateAgentTool } from "./tool.js";
+import { CHILD_ENV, runSubagent } from "./runner.js";
+import { SubagentManager } from "./runs.js";
+import { registerSubagentTool } from "./tool.js";
 import type { BackgroundRunResult } from "./types.js";
 
 export function notifyBackgroundSettled(
@@ -20,8 +20,8 @@ export function notifyBackgroundSettled(
 	try {
 		pi.sendMessage(
 			{
-				customType: "delegated-agent-complete",
-				content: `Background delegated agent finished.\nRun ID: ${run.id}\nAgent: ${run.agent}\nStatus: ${run.status}\nUse delegate_agent_result with this ID to retrieve the result.`,
+				customType: "subagent-complete",
+				content: `Background subagent finished.\nRun ID: ${run.id}\nAgent: ${run.agent}\nStatus: ${run.status}\nUse subagent_result with this ID to retrieve the result.`,
 				display: true,
 				details: { id: run.id, agent: run.agent, status: run.status },
 			},
@@ -40,8 +40,8 @@ export default function (pi: ExtensionAPI): void {
 			pi.appendEntry(RUN_ENTRY_TYPE, run);
 		},
 	});
-	const manager = new DelegatedAgentManager({
-		run: runDelegatedAgent,
+	const manager = new SubagentManager({
+		run: runSubagent,
 		finalize: finalizeRun,
 		history,
 		onBackgroundSettled(run) {
@@ -49,8 +49,7 @@ export default function (pi: ExtensionAPI): void {
 		},
 	});
 	const enabledCatalog = getEnabledAgentCatalog(catalog);
-	if (enabledCatalog.size)
-		registerDelegateAgentTool(pi, enabledCatalog, manager);
+	if (enabledCatalog.size) registerSubagentTool(pi, enabledCatalog, manager);
 	registerBackgroundAgentTools(pi, manager);
 	registerAgentCommands(pi);
 	registerAgentInspector(pi, history, manager);

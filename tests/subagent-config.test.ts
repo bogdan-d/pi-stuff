@@ -5,22 +5,22 @@ import {
 	createAgentCatalog,
 	getAgentNames,
 	getEnabledAgentCatalog,
-} from "../extensions/delegated-agents/agents.js";
-import { parseCustomAgentConfig } from "../extensions/delegated-agents/config.js";
+} from "../extensions/subagent/agents.js";
+import { parseCustomAgentConfig } from "../extensions/subagent/config.js";
 import {
-	renderDelegateCall,
-	renderDelegateResult,
-} from "../extensions/delegated-agents/render.js";
-import { buildChildArgs } from "../extensions/delegated-agents/runner.js";
-import { createDelegateAgentTool } from "../extensions/delegated-agents/tool.js";
+	renderSubagentCall,
+	renderSubagentResult,
+} from "../extensions/subagent/render.js";
+import { buildChildArgs } from "../extensions/subagent/runner.js";
+import { createSubagentTool } from "../extensions/subagent/tool.js";
 
-const source = "/tmp/pi-delegated-agents.json";
+const source = "/tmp/pi-subagent.json";
 
 function parse(agents: Record<string, unknown>) {
 	return parseCustomAgentConfig({ agents }, source);
 }
 
-describe("delegated agent config", () => {
+describe("subagent config", () => {
 	test("parses valid agents and catalogs them deterministically", () => {
 		const config = parse({
 			"z-reviewer": {
@@ -70,7 +70,7 @@ describe("delegated agent config", () => {
 				},
 			}),
 		);
-		const tool = createDelegateAgentTool(catalog, {} as never);
+		const tool = createSubagentTool(catalog, {} as never);
 
 		expect(tool.parameters.properties.agent.enum).toEqual([
 			"explore-shallow",
@@ -158,7 +158,7 @@ describe("delegated agent config", () => {
 		);
 	});
 
-	test("supports disabling the entire delegation catalog", () => {
+	test("supports disabling the entire subagent catalog", () => {
 		const overrides = Object.fromEntries(
 			[
 				"planning",
@@ -255,7 +255,7 @@ describe("delegated agent config", () => {
 			fg: (_color: string, text: string) => text,
 			bold: (text: string) => text,
 		} as unknown as Theme;
-		const rendered = renderDelegateResult(
+		const rendered = renderSubagentResult(
 			{
 				content: [],
 				details: {
@@ -278,7 +278,7 @@ describe("delegated agent config", () => {
 			.join("\n");
 		expect(rendered).toContain("Running");
 		expect(rendered).not.toContain("Done");
-		expect(rendered).toContain("delegate_agent_result");
+		expect(rendered).toContain("subagent_result");
 	});
 
 	test("dispatches foreground ownership and detaches background ownership", async () => {
@@ -344,7 +344,7 @@ describe("delegated agent config", () => {
 				};
 			},
 		};
-		const tool = createDelegateAgentTool(catalog, manager as never);
+		const tool = createSubagentTool(catalog, manager as never);
 		const signal = new AbortController().signal;
 		const onUpdate = () => {};
 		const context = {
@@ -389,7 +389,7 @@ describe("delegated agent config", () => {
 			"--append-system-prompt",
 			spec.rolePromptPath,
 			"--append-system-prompt",
-			"Custom delegated-agent specialization:\nCUSTOM MARKER",
+			"Custom subagent specialization:\nCUSTOM MARKER",
 			"--thinking",
 			"high",
 		]);
@@ -434,12 +434,12 @@ describe("delegated agent config", () => {
 		};
 
 		expect(
-			renderDelegateCall({ profile: "review", task: "Old task" }, theme)
+			renderSubagentCall({ profile: "review", task: "Old task" }, theme)
 				.render(120)
 				.join("\n"),
-		).toContain("delegate_agent [review]");
+		).toContain("subagent [review]");
 		expect(
-			renderDelegateResult(
+			renderSubagentResult(
 				{
 					content: [{ type: "text", text: "Old output" }],
 					details: {

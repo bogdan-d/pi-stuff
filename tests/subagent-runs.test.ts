@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { DelegatedAgentRunError } from "../extensions/delegated-agents/runner.js";
-import { DelegatedAgentManager } from "../extensions/delegated-agents/runs.js";
+import { SubagentRunError } from "../extensions/subagent/runner.js";
+import { SubagentManager } from "../extensions/subagent/runs.js";
 
 const usage = {
 	input: 1,
@@ -60,7 +60,7 @@ function child(agent = "review") {
 }
 
 function start(
-	manager: DelegatedAgentManager,
+	manager: SubagentManager,
 	agent: keyof typeof specs = "review",
 	extra = {},
 ) {
@@ -88,9 +88,9 @@ const finalize = async (details: any) => ({
 	},
 });
 
-describe("DelegatedAgentManager", () => {
+describe("SubagentManager", () => {
 	test("runs explore agents through the shared background lifecycle", async () => {
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: async () => child("explore-deep"),
 			finalize,
 			createId: () => "explore",
@@ -110,7 +110,7 @@ describe("DelegatedAgentManager", () => {
 	test("runs four, queues FIFO, and frees slots after failure", async () => {
 		const jobs = Array.from({ length: 6 }, () => deferred<any>());
 		let called = 0;
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: () => jobs[called++]!.promise,
 			finalize,
 			createId: (() => {
@@ -142,7 +142,7 @@ describe("DelegatedAgentManager", () => {
 	test("cancels queued work and aborts only a result wait", async () => {
 		const job = deferred<any>();
 		let childSignal: AbortSignal | undefined;
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: (options) => {
 				childSignal = options.signal;
 				return job.promise;
@@ -171,7 +171,7 @@ describe("DelegatedAgentManager", () => {
 	test("guards implementation writes and permits explicit override", async () => {
 		const jobs = [deferred<any>(), deferred<any>()];
 		let called = 0;
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: () => jobs[called++]!.promise,
 			finalize,
 			createId: () => crypto.randomUUID(),
@@ -187,7 +187,7 @@ describe("DelegatedAgentManager", () => {
 
 	test("claims terminal usage once and evicts oldest terminal record", async () => {
 		let id = 0;
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: async () => child(),
 			finalize,
 			maxRecords: 1,
@@ -205,7 +205,7 @@ describe("DelegatedAgentManager", () => {
 	test("lists newest first and notifies only completed or failed runs", async () => {
 		let id = 0;
 		const notices: string[] = [];
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: async () => child(),
 			finalize,
 			now: () => 1,
@@ -228,9 +228,9 @@ describe("DelegatedAgentManager", () => {
 			stopReason: "error",
 			errorMessage: "transport failed",
 		};
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: async () => {
-				throw new DelegatedAgentRunError(
+				throw new SubagentRunError(
 					"transport failed",
 					failedChild,
 					new Error("transport failed"),
@@ -263,7 +263,7 @@ describe("DelegatedAgentManager", () => {
 
 	test("notifies failed runs", async () => {
 		const notices: string[] = [];
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: async () => child(),
 			finalize: async (details) => ({
 				...(await finalize(details)),
@@ -284,7 +284,7 @@ describe("DelegatedAgentManager", () => {
 		const notices: string[] = [];
 		let cleaned = false;
 		let calls = 0;
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: (options) => {
 				calls++;
 				return new Promise((_resolve, reject) => {
@@ -318,7 +318,7 @@ describe("DelegatedAgentManager", () => {
 
 	test("foreground bypasses background slots and shutdown aborts it", async () => {
 		const signals: AbortSignal[] = [];
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: (options) =>
 				new Promise((_resolve, reject) => {
 					signals.push(options.signal!);
@@ -340,8 +340,8 @@ describe("DelegatedAgentManager", () => {
 
 	test("tracks foreground before invocation and settles runtime details", async () => {
 		let seenBeforeRun = false;
-		let manager!: DelegatedAgentManager;
-		manager = new DelegatedAgentManager({
+		let manager!: SubagentManager;
+		manager = new SubagentManager({
 			run: async (options) => {
 				seenBeforeRun = manager.history.list()[0]?.status === "running";
 				options.onEvent?.({
@@ -376,7 +376,7 @@ describe("DelegatedAgentManager", () => {
 
 	test("retains inspector summaries after result-record eviction", async () => {
 		let id = 0;
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: async () => child(),
 			finalize,
 			maxRecords: 1,
@@ -391,7 +391,7 @@ describe("DelegatedAgentManager", () => {
 	});
 
 	test("settles runs when terminal persistence or runtime observers throw", async () => {
-		const manager = new DelegatedAgentManager({
+		const manager = new SubagentManager({
 			run: async (options) => {
 				options.onEvent?.({
 					type: "tool_start",
