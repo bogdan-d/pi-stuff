@@ -28,3 +28,17 @@ Bun's test runner is configured. Keep focused tests under `tests/` and treat `bu
 ## Commit & Pull Request Guidelines
 
 History uses short, imperative messages; scoped prefixes appear when useful, for example `docs: document !exclusions + package filtering`. Keep commits focused on one change. Pull requests should include a brief purpose, changed resources or extensions, validation output from `bun run check`, and manual Pi reload notes when behavior changes. Link related issues when available.
+
+## Agent skills
+
+### Issue tracker
+
+Issues/specs live as Markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context domain docs: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
