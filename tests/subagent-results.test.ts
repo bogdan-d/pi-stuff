@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { stat } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
+import { dirname } from "node:path";
 import {
 	finalizeRun,
 	formatRunFailure,
@@ -78,11 +79,18 @@ describe("subagent result finalization", () => {
 			(_, index) => `line ${index}`,
 		).join("\n");
 		const result = await finalizeRun(details(full));
-		expect(result.details.truncated).toBe(true);
-		expect(result.output).toContain("Output truncated");
-		expect((await stat(result.details.fullOutputPath!)).mode & 0o777).toBe(
-			0o600,
-		);
+		try {
+			expect(result.details.truncated).toBe(true);
+			expect(result.output).toContain("Output truncated");
+			expect((await stat(result.details.fullOutputPath!)).mode & 0o777).toBe(
+				0o600,
+			);
+		} finally {
+			await rm(dirname(result.details.fullOutputPath!), {
+				recursive: true,
+				force: true,
+			});
+		}
 	});
 
 	test("does not retain unbounded failure text", async () => {
@@ -91,8 +99,15 @@ describe("subagent result finalization", () => {
 			(_, index) => `failure ${index}`,
 		).join("\n");
 		const result = await finalizeRun(details(full, { stopReason: "error" }));
-		expect(result.error).toBe(result.output);
-		expect(result.error).toContain("Output truncated");
-		expect(result.error).not.toContain("failure 2999");
+		try {
+			expect(result.error).toBe(result.output);
+			expect(result.error).toContain("Output truncated");
+			expect(result.error).not.toContain("failure 2999");
+		} finally {
+			await rm(dirname(result.details.fullOutputPath!), {
+				recursive: true,
+				force: true,
+			});
+		}
 	});
 });
