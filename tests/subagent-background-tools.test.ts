@@ -58,7 +58,7 @@ async function execute(tool: any, params: any, signal?: AbortSignal) {
 }
 
 describe("background subagent tools", () => {
-	test("delivers completion on next turn without waking parent", () => {
+	test("delivers completion as a follow-up and wakes the parent", () => {
 		const calls: any[] = [];
 		notifyBackgroundSettled(
 			{ sendMessage: (...args: any[]) => calls.push(args) } as any,
@@ -76,8 +76,8 @@ describe("background subagent tools", () => {
 		expect(calls[0][0].content).toContain("subagent_result");
 		expect(calls[0][0].content).not.toContain("answer");
 		expect(calls[0][1]).toEqual({
-			deliverAs: "nextTurn",
-			triggerTurn: false,
+			deliverAs: "followUp",
+			triggerTurn: true,
 		});
 		expect(() =>
 			notifyBackgroundSettled(

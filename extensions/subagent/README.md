@@ -26,9 +26,10 @@ cancel queued or running work.
 
 Active runs live only in the current runtime. Reload, session replacement, or
 shutdown cancels them. Compact terminal summaries persist on the current
-session branch and survive resume and fork. Completion notices are queued for
-the next turn and never wake the parent automatically. Full child usage counts
-toward parent totals only on the first terminal result retrieval.
+session branch and survive resume and fork. Completion notices queue as
+follow-ups and wake an idle parent automatically. The parent retrieves the
+terminal result with `subagent_result`. Full child usage counts toward parent
+totals only on the first terminal result retrieval.
 
 Run `/agents` to inspect foreground and background calls without involving the
 parent model. The modal shows active work first, then branch history. Enter opens

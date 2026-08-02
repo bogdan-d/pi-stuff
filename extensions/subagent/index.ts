@@ -25,7 +25,7 @@ export function notifyBackgroundSettled(
 				display: true,
 				details: { id: run.id, agent: run.agent, status: run.status },
 			},
-			{ deliverAs: "nextTurn", triggerTurn: false },
+			{ deliverAs: "followUp", triggerTurn: true },
 		);
 	} catch {
 		// Retained result remains authoritative when message delivery fails.
