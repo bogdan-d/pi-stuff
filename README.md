@@ -13,9 +13,11 @@ pi-stuff/
 ├── biome.json            # formatter (tabs, double quotes)
 ├── extensions/
 │   ├── *.ts              # single-file extensions (26)
+│   ├── accounts/         # named subscription OAuth account switching
 │   ├── dynamic-resources/  # index.ts + skill/data
 │   ├── plan-mode/          # index.ts + utils.ts (registers --plan flag)
 │   └── subagent/           # index.ts + agents.ts; seeds bundled agents/*.md
+├── tests/                # extension tests and shared test helpers
 ├── prompts/              # prompt templates (.md) — package resource
 └── themes/               # themes (.json) — package resource
 ```
@@ -30,7 +32,18 @@ qna, rainbow-editor, status-line, structured-output, summarize,
 titlebar-spinner, todo, tools, truncated-tool, widget-placement,
 working-indicator.
 
-**Directory:** `dynamic-resources`, `plan-mode`, `subagent`.
+**Directory:** `accounts`, `dynamic-resources`, `plan-mode`, `subagent`.
+
+### Accounts
+
+`extensions/accounts` provides the `/accounts` command for managing named
+subscription OAuth accounts across OpenAI Codex, Anthropic, and GitHub Copilot.
+It stores credentials in `~/.pi/agent/pi-accounts.json`, refreshes them under a
+file lock, and keeps each provider's active account independent.
+
+The extension is loaded automatically by the package's
+`extensions/*/index.ts` manifest entry. Its tests live under
+`tests/accounts/`.
 
 ## Prompts & themes
 
@@ -122,7 +135,7 @@ bun run format     # autofix formatting
 ```
 
 Runtime deps are Pi core packages (declared as `peerDependencies`, provided by
-Pi at runtime). No npm runtime dependencies.
+Pi at runtime), plus `proper-lockfile` for the accounts extension's storage.
 
 ## License
 

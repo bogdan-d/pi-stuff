@@ -53,6 +53,7 @@
 		"@earendil-works/pi-coding-agent": "0.83.0",
 		"@earendil-works/pi-tui": "0.83.0",
 		"@types/node": "^26.1.2",
+		"@types/proper-lockfile": "^4.1.4",
 		"typescript": "^7.0.2"
 	},
 	"repository": {
@@ -66,5 +67,8 @@
 	"trustedDependencies": [
 		"@google/genai",
 		"protobufjs"
-	]
+	],
+	"dependencies": {
+		"proper-lockfile": "^4.1.2"
+	}
 }
