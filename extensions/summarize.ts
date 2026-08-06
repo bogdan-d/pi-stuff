@@ -1,11 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type {
-	AssistantMessage,
-	ProviderStreamOptions,
-	UserMessage,
-} from "@earendil-works/pi-ai";
+import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { uuidv7 } from "@earendil-works/pi-ai";
-import { complete, getModel } from "@earendil-works/pi-ai/compat";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
@@ -184,22 +179,18 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Preparing summary...", "info");
 			}
 
-			const model = getModel("openai", "gpt-5.2");
-			if (!model && ctx.hasUI) {
-				ctx.ui.notify("Model openai/gpt-5.2 not found", "warning");
+			const model = ctx.modelRegistry.find("openai", "gpt-5.2");
+			if (!model) {
+				if (ctx.hasUI)
+					ctx.ui.notify("Model openai/gpt-5.2 not found", "warning");
+				return;
 			}
-
-			const auth = model
-				? await ctx.modelRegistry.getApiKeyAndHeaders(model)
-				: undefined;
-			if (auth && !auth.ok && ctx.hasUI) {
-				ctx.ui.notify(auth.error, "warning");
-			}
-			if (auth?.ok && !auth.apiKey && ctx.hasUI) {
-				ctx.ui.notify("No API key for openai/gpt-5.2", "warning");
-			}
-
-			if (!model || !auth?.ok || !auth.apiKey) {
+			if (!ctx.modelRegistry.hasConfiguredAuth(model)) {
+				if (ctx.hasUI)
+					ctx.ui.notify(
+						"No authentication configured for openai/gpt-5.2",
+						"warning",
+					);
 				return;
 			}
 
@@ -216,23 +207,14 @@ export default function (pi: ExtensionAPI) {
 				},
 			];
 
-			const requestOptions: ProviderStreamOptions = {
-				apiKey: auth.apiKey,
-				reasoningEffort: "high",
-				cacheRetention: "none",
-				sessionId: uuidv7(),
-			};
-			if (auth.headers !== undefined) {
-				requestOptions.headers = auth.headers;
-			}
-			if (auth.env !== undefined) {
-				requestOptions.env = auth.env;
-			}
-
-			const response = await complete(
+			const response = await ctx.modelRegistry.complete(
 				model,
 				{ messages: summaryMessages },
-				requestOptions,
+				{
+					reasoningEffort: "high",
+					cacheRetention: "none",
+					sessionId: uuidv7(),
+				},
 			);
 
 			const summary = response.content

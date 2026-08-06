@@ -7,11 +7,35 @@
  * without sending `/codex usage` back through the chat input.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
 import {
 	fetchCodexUsage,
 	formatCodexUsage,
 } from "../../howaboua-pi-stuff/packages/pi-codex-conversion/src/ui/settings/usage.ts";
+
+async function fetchUsage(ctx: ExtensionCommandContext) {
+	return fetchCodexUsage({
+		model: ctx.model,
+		signal: ctx.signal,
+		modelRegistry: {
+			getApiKeyAndHeaders: async (
+				model: Parameters<typeof ctx.modelRegistry.getApiKeyAndHeaders>[0],
+			) => {
+				const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+				if (!auth.ok || !auth.headers) return auth;
+				return {
+					...auth,
+					headers: Object.fromEntries(
+						Object.entries(auth.headers).filter((entry) => entry[1] !== null),
+					),
+				};
+			},
+		},
+	} as Parameters<typeof fetchCodexUsage>[0]);
+}
 
 export default function codexUsageStatusShortcut(pi: ExtensionAPI) {
 	pi.registerCommand("status", {
@@ -24,7 +48,7 @@ export default function codexUsageStatusShortcut(pi: ExtensionAPI) {
 			}
 
 			try {
-				const usage = await fetchCodexUsage(ctx);
+				const usage = await fetchUsage(ctx);
 				ctx.ui.notify(formatCodexUsage(usage), "info");
 			} catch (error) {
 				ctx.ui.notify(

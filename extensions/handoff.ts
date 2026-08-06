@@ -13,12 +13,7 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import {
-	complete,
-	type Message,
-	type ProviderStreamOptions,
-	type TextContent,
-} from "@earendil-works/pi-ai/compat";
+import type { Message, TextContent } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	SessionEntry,
@@ -145,15 +140,6 @@ export default function (pi: ExtensionAPI) {
 					loader.onAbort = () => done(null);
 
 					const doGenerate = async () => {
-						const auth = await ctx.modelRegistry.getApiKeyAndHeaders(
-							ctx.model!,
-						);
-						if (!auth.ok || !auth.apiKey) {
-							throw new Error(
-								auth.ok ? `No API key for ${ctx.model!.provider}` : auth.error,
-							);
-						}
-
 						const userMessage: Message = {
 							role: "user",
 							content: [
@@ -165,18 +151,10 @@ export default function (pi: ExtensionAPI) {
 							timestamp: Date.now(),
 						};
 
-						const requestOptions: ProviderStreamOptions = {
-							apiKey: auth.apiKey,
-							signal: loader.signal,
-						};
-						if (auth.headers !== undefined) {
-							requestOptions.headers = auth.headers;
-						}
-
-						const response = await complete(
+						const response = await ctx.modelRegistry.complete(
 							ctx.model!,
 							{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-							requestOptions,
+							{ signal: loader.signal },
 						);
 
 						if (response.stopReason === "aborted") {

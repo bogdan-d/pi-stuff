@@ -20,7 +20,7 @@ export interface ProviderOwnedOAuth {
 	login(interaction: AuthInteraction): Promise<OAuthCredential>;
 	refresh(
 		credential: OAuthCredential,
-		signal?: AbortSignal,
+		signal: AbortSignal,
 	): Promise<OAuthCredential>;
 	toAuth(credential: OAuthCredential): Promise<ModelAuth>;
 }

@@ -145,8 +145,10 @@ export class RuntimeAuthCoordinator {
 						credential = latestCredential;
 						if (latestCredential.expires > now + REFRESH_SKEW_MS) return latest;
 						try {
-							const refreshed =
-								await this.provider.oauth.refresh(latestCredential);
+							const refreshed = await this.provider.oauth.refresh(
+								latestCredential,
+								ctx.signal ?? new AbortController().signal,
+							);
 							credential = refreshed;
 							return {
 								...latest,

@@ -7,12 +7,7 @@
  * 3. Loads the result into the editor for user to fill in answers
  */
 
-import {
-	complete,
-	type ProviderStreamOptions,
-	type TextContent,
-	type UserMessage,
-} from "@earendil-works/pi-ai/compat";
+import type { TextContent, UserMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { BorderedLoader } from "@earendil-works/pi-coding-agent";
 
@@ -95,32 +90,16 @@ export default function (pi: ExtensionAPI) {
 
 					// Do the work
 					const doExtract = async () => {
-						const auth = await ctx.modelRegistry.getApiKeyAndHeaders(
-							ctx.model!,
-						);
-						if (!auth.ok || !auth.apiKey) {
-							throw new Error(
-								auth.ok ? `No API key for ${ctx.model!.provider}` : auth.error,
-							);
-						}
 						const userMessage: UserMessage = {
 							role: "user",
 							content: [{ type: "text", text: assistantText }],
 							timestamp: Date.now(),
 						};
 
-						const requestOptions: ProviderStreamOptions = {
-							apiKey: auth.apiKey,
-							signal: loader.signal,
-						};
-						if (auth.headers !== undefined) {
-							requestOptions.headers = auth.headers;
-						}
-
-						const response = await complete(
+						const response = await ctx.modelRegistry.complete(
 							ctx.model!,
 							{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-							requestOptions,
+							{ signal: loader.signal },
 						);
 
 						if (response.stopReason === "aborted") {

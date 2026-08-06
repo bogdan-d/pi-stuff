@@ -1023,18 +1023,27 @@ test("invalid refreshed credentials fail closed instead of escaping storage vali
 		},
 	});
 	const provider = fakeProvider("anthropic");
-	provider.oauth.refresh = async () => ({
-		type: "oauth",
-		access: "",
-		refresh: "rotated-secret",
-		expires: Date.now() + 60_000,
-	});
+	let refreshSignal: AbortSignal | undefined;
+	provider.oauth.refresh = async (_current, signal) => {
+		refreshSignal = signal;
+		return {
+			type: "oauth",
+			access: "",
+			refresh: "rotated-secret",
+			expires: Date.now() + 60_000,
+		};
+	};
 	const mock = createMockPi();
 	const coordinator = new RuntimeAuthCoordinator(mock.pi, provider);
 	const { registry, keys } = runtimeHarness(mock);
-	const { ctx } = createMockContext({ modelRegistry: registry });
+	const controller = new AbortController();
+	const { ctx } = createMockContext({
+		modelRegistry: registry,
+		signal: controller.signal,
+	});
 
 	const result = await coordinator.ensureActive(ctx, store);
+	assert.equal(refreshSignal, controller.signal);
 	assert.equal(result.status, "error");
 	assert.equal(keys.get("anthropic"), FAIL_CLOSED_API_KEY);
 	assert.equal(
