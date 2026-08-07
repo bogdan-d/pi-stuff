@@ -1,5 +1,5 @@
 /**
- * Truncated Tool Example - Demonstrates proper output truncation for custom tools
+ * Ripgrep search tool with bounded model output.
  *
  * Custom tools MUST truncate their output to avoid overwhelming the LLM context.
  * The built-in limit is 50KB (~10k tokens) and 2000 lines, whichever is hit first.
@@ -25,7 +25,7 @@ import {
 	withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import { Type } from "typebox";
@@ -86,14 +86,14 @@ export default function (pi: ExtensionAPI) {
 			const { pattern, path: searchPath, glob } = params;
 
 			// Build the ripgrep command
-			const args = ["rg", "--line-number", "--color=never"];
+			const args = ["--line-number", "--color=never"];
 			if (glob) args.push("--glob", glob);
-			args.push(pattern);
+			args.push("--", pattern);
 			args.push(searchPath || ".");
 
 			let output: string;
 			try {
-				output = execSync(args.join(" "), {
+				output = execFileSync("rg", args, {
 					cwd: ctx.cwd,
 					encoding: "utf-8",
 					maxBuffer: 100 * 1024 * 1024, // 100MB buffer to capture full output
