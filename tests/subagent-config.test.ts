@@ -5,14 +5,14 @@ import {
 	createAgentCatalog,
 	getAgentNames,
 	getEnabledAgentCatalog,
-} from "../extensions/subagent/agents.js";
-import { parseCustomAgentConfig } from "../extensions/subagent/config.js";
+} from "../extensions/subagent_deprecated/agents.js";
+import { parseCustomAgentConfig } from "../extensions/subagent_deprecated/config.js";
 import {
 	renderSubagentCall,
 	renderSubagentResult,
-} from "../extensions/subagent/render.js";
-import { buildChildArgs } from "../extensions/subagent/runner.js";
-import { createSubagentTool } from "../extensions/subagent/tool.js";
+} from "../extensions/subagent_deprecated/render.js";
+import { buildChildArgs } from "../extensions/subagent_deprecated/runner.js";
+import { createSubagentTool } from "../extensions/subagent_deprecated/tool.js";
 
 const source = "/tmp/pi-subagent.json";
 

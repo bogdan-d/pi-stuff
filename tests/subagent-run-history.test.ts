@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	AgentRunHistory,
 	RUN_ENTRY_TYPE,
-} from "../extensions/subagent/run-history.js";
+} from "../extensions/subagent_deprecated/run-history.js";
 
 function registration(
 	id: string,

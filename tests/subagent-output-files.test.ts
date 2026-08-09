@@ -12,12 +12,12 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import subagentExtension from "../extensions/subagent/index.js";
+import subagentExtension from "../extensions/subagent_deprecated/index.js";
 import {
 	collectStaleSubagentOutputs,
 	createSubagentOutputFile,
 	SUBAGENT_OUTPUT_RETENTION_MS,
-} from "../extensions/subagent/output-files.js";
+} from "../extensions/subagent_deprecated/output-files.js";
 
 const NOW = Date.UTC(2025, 0, 8);
 

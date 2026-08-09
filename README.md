@@ -16,7 +16,7 @@ pi-stuff/
 │   ├── accounts/         # named subscription OAuth account switching
 │   ├── dynamic-resources/  # index.ts + skill/data
 │   ├── plan-mode/          # index.ts + utils.ts (registers --plan flag)
-│   └── subagent/           # index.ts + agents.ts; seeds bundled agents/*.md
+│   └── subagent_deprecated/ # deprecated subagent implementation
 ├── tests/                # extension tests and shared test helpers
 ├── prompts/              # prompt templates (.md) — package resource
 └── themes/               # themes (.json) — package resource
@@ -32,7 +32,7 @@ qna, rainbow-editor, status-line, structured-output, summarize,
 titlebar-spinner, todo, tools, truncated-tool, widget-placement,
 working-indicator.
 
-**Directory:** `accounts`, `dynamic-resources`, `plan-mode`, `subagent`.
+**Directory:** `accounts`, `dynamic-resources`, `plan-mode`, `subagent_deprecated`.
 
 ### Accounts
 
@@ -53,12 +53,10 @@ up. No copy to `~/.pi/agent` is needed; the package is the single source.
 
 ## Agents
 
-Agents are **not** a Pi package resource (no manifest key). The `subagent`
-extension ships its agent definitions in `extensions/subagent/agents/*.md` and
-**seeds** them: on `session_start` (startup / reload) it copies each bundled
-agent to `~/.pi/agent/agents/<name>.md` when that file is missing or its
-checksum differs. Bundled files are canonical — edit them here and `/reload` to
-propagate. Local edits to the seeded files are overwritten on the next seed.
+Agents are **not** a Pi package resource (no manifest key). The deprecated
+`subagent_deprecated` implementation keeps its role prompts in
+`extensions/subagent_deprecated/prompts/*.md` and is excluded from package
+loading while replacement work proceeds.
 
 ## Package resources & filtering
 

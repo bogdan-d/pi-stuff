@@ -5,8 +5,8 @@ import {
 	AgentInspectorComponent,
 	formatAgentSummary,
 	registerAgentInspector,
-} from "../extensions/subagent/inspector.js";
-import { AgentRunHistory } from "../extensions/subagent/run-history.js";
+} from "../extensions/subagent_deprecated/inspector.js";
+import { AgentRunHistory } from "../extensions/subagent_deprecated/run-history.js";
 
 const theme = {
 	fg: (_color: string, text: string) => text,

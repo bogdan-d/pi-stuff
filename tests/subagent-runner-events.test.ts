@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	runtimeEventFromRpcEvent,
 	summarizeToolCall,
-} from "../extensions/subagent/runner.js";
+} from "../extensions/subagent_deprecated/runner.js";
 
 describe("subagent runtime events", () => {
 	test("keeps path summaries but omits commands and unknown arguments", () => {
