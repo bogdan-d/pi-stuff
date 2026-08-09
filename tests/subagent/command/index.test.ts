@@ -1,11 +1,70 @@
 import { describe, expect, it, mock } from "bun:test";
-import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
+import {
+	Key,
+	KeybindingsManager,
+	TUI_KEYBINDINGS,
+} from "@earendil-works/pi-tui";
 import { registerSubagentsCommand } from "../../../extensions/subagent/command/index.js";
 import { DEFAULT_SUBAGENT_SETTINGS } from "../../../extensions/subagent/settings.js";
 import { eventually } from "../helpers/eventually.js";
 import { fakeAgent } from "../helpers/fake-agent.js";
 
 describe("subagents command registration", () => {
+	it("registers Ctrl+Alt+A through the same default command path", async () => {
+		let command: any;
+		let shortcut: any;
+		let shortcutKey: string | undefined;
+		const manager = {
+			configure: mock(),
+			listConversations: () => [],
+			onConversationUpdate: () => () => {},
+		};
+		registerSubagentsCommand(
+			{
+				registerCommand: (_name: string, registration: any) => {
+					command = registration;
+				},
+				registerShortcut: (key: string, registration: any) => {
+					shortcutKey = key;
+					shortcut = registration;
+				},
+			} as any,
+			manager as any,
+			{
+				load: async () => ({ settings: DEFAULT_SUBAGENT_SETTINGS }),
+				save: async () => {},
+			},
+		);
+
+		expect(shortcutKey).toBe(Key.ctrlAlt("a"));
+		expect(shortcut.description).toBe("Open subagent manager");
+
+		const rendered: string[] = [];
+		const custom = mock(async (factory: any) => {
+			const component = factory(
+				{ requestRender() {} },
+				{},
+				undefined,
+				() => {},
+			);
+			rendered.push(component.render(100).join("\n"));
+		});
+		const ctx = {
+			hasUI: true,
+			cwd: process.cwd(),
+			ui: {
+				custom,
+			},
+		};
+		await command.handler("", ctx);
+		await shortcut.handler(ctx);
+		await shortcut.handler({ ...ctx, hasUI: false });
+
+		expect(rendered).toHaveLength(2);
+		expect(custom).toHaveBeenCalledTimes(2);
+		expect(rendered[1]).toBe(rendered[0]);
+	});
+
 	it("routes page keys to the overlay inspector while it is open", async () => {
 		let handler: any;
 		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);

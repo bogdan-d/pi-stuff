@@ -1,6 +1,6 @@
 import type {
 	ExtensionAPI,
-	ExtensionCommandContext,
+	ExtensionContext,
 	KeybindingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../agents.js";
@@ -12,6 +12,7 @@ import {
 	SubagentSettingsStore,
 } from "../settings.js";
 import { updateSubagentWidget } from "../widget.js";
+import { SUBAGENTS_SHORTCUT } from "./input.js";
 import {
 	SubagentOverlayComponent,
 	type SubagentOverlayPage,
@@ -28,10 +29,10 @@ export function registerSubagentsCommand(
 	agentRegistry?: AgentRegistry,
 	onSettingsUpdated?: (settings: SubagentSettings) => void,
 ) {
-	pi.registerCommand?.("subagents", {
+	const subagentsCommand = {
 		description: "Manage subagent conversations and generations",
 		getArgumentCompletions,
-		handler: async (args: string, ctx: ExtensionCommandContext) => {
+		handler: async (args: string, ctx: ExtensionContext) => {
 			if (!ctx.hasUI || !ctx.ui?.custom) return;
 
 			const requested = args.trim();
@@ -219,6 +220,11 @@ export function registerSubagentsCommand(
 			}
 			await saveQueue;
 		},
+	};
+	pi.registerCommand?.("subagents", subagentsCommand);
+	pi.registerShortcut?.(SUBAGENTS_SHORTCUT, {
+		description: "Open subagent manager",
+		handler: (ctx) => subagentsCommand.handler("", ctx),
 	});
 }
 
@@ -254,7 +260,7 @@ function getArgumentCompletions(prefix: string) {
 }
 
 export function notify(
-	ctx: ExtensionCommandContext,
+	ctx: ExtensionContext,
 	message: string,
 	level: "info" | "warning" | "error" | "success" = "info",
 ) {

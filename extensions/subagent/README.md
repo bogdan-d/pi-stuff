@@ -83,7 +83,7 @@ Joining collects a finished result and is safe to repeat. Every final joined res
 
 Concurrency is shared across the recursive tree. `maxConversations` defaults to `100`; new spawns are rejected at capacity until subagents are removed. Existing subagents can still be inspected, joined, resumed when eligible, or removed.
 
-Settings are stored at `${PI_AGENT_DIR ?? ~/.pi/agent}/subagent/settings.json`. `/subagents` opens the inventory, agent browser, and settings UI. The overlay retains a **Previous generations** section, while `inspect` exposes the same generation-native history with bounded metadata and without outputs.
+Settings are stored at `${PI_AGENT_DIR ?? ~/.pi/agent}/subagent/settings.json`. `/subagents` opens the inventory, agent browser, and settings UI; `Ctrl+Alt+A` toggles that UI without typing the command. If another extension claims that shortcut, Pi reports the conflict and `/subagents` remains available. The overlay retains a **Previous generations** section, while `inspect` exposes the same generation-native history with bounded metadata and without outputs.
 
 The widget defaults to summary mode. Progress mode shows queued/running rows up to the configured limit.
 

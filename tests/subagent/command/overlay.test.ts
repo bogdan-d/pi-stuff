@@ -15,6 +15,7 @@ function overlayFixture(
 	};
 	let listener = () => {};
 	const notify = mock();
+	const done = mock();
 	const onCollect = mock(async () => {
 		const latest = conversation.generations.at(-1)!;
 		conversation = {
@@ -43,7 +44,7 @@ function overlayFixture(
 		{ requestRender: mock() },
 		{} as any,
 		{} as any,
-		mock(),
+		done,
 		{
 			initialPage: "conversations",
 			agents: [],
@@ -55,8 +56,16 @@ function overlayFixture(
 			onCollect,
 		},
 	);
-	return { component, notify, onCollect, onResume };
+	return { component, done, notify, onCollect, onResume };
 }
+
+test("Ctrl+Alt+A closes the overlay", () => {
+	const { component, done } = overlayFixture();
+
+	component.handleInput("\x1b\x01");
+
+	expect(done).toHaveBeenCalledTimes(1);
+});
 
 test("completed results must be collected before the overlay enables resume", async () => {
 	const { component, onCollect, onResume } = overlayFixture();

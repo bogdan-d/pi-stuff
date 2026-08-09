@@ -35,6 +35,7 @@ import {
 	isPageDownKey,
 	isPageUpKey,
 	isShiftTabKey,
+	isSubagentsShortcut,
 	isUpKey,
 	type SubagentKeybindings,
 } from "./input.js";
@@ -157,6 +158,10 @@ export class SubagentOverlayComponent implements Component, Focusable {
 	}
 
 	handleInput(data: string): void {
+		if (isSubagentsShortcut(data)) {
+			this.done();
+			return;
+		}
 		if (this.focusRegion === "filter") {
 			const input = this.activeFilter;
 			if (!input) return;

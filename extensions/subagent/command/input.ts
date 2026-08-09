@@ -1,4 +1,10 @@
-import { type KeybindingsManager, matchesKey } from "@earendil-works/pi-tui";
+import {
+	Key,
+	type KeybindingsManager,
+	matchesKey,
+} from "@earendil-works/pi-tui";
+
+export const SUBAGENTS_SHORTCUT = Key.ctrlAlt("a");
 
 export type SubagentKeybindings =
 	| Pick<KeybindingsManager, "matches">
@@ -82,4 +88,8 @@ export function isPageDownKey(data: string, keybindings?: SubagentKeybindings) {
 
 export function isShiftTabKey(data: string) {
 	return matchesKey(data, "shift+tab") || data === "\x1b[Z";
+}
+
+export function isSubagentsShortcut(data: string) {
+	return matchesKey(data, SUBAGENTS_SHORTCUT);
 }
