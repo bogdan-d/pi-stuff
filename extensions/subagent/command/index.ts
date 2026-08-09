@@ -1,6 +1,7 @@
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
+	KeybindingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../agents.js";
 import type { SubagentId } from "../identifiers.js";
@@ -52,11 +53,13 @@ export function registerSubagentsCommand(
 			await runtime.prepareSkillCatalog?.(ctx.cwd);
 			updateSubagentWidget(ctx, runtime.listConversations(), settings);
 			let saveQueue = Promise.resolve();
+			let restoreAltScreenPaging: (() => void) | undefined;
 
 			try {
 				await ctx.ui.custom<void>(
-					(tui, theme, keys, done) =>
-						new SubagentOverlayComponent(
+					(tui, theme, keys, done) => {
+						restoreAltScreenPaging = suspendAltScreenPaging(keys);
+						return new SubagentOverlayComponent(
 							runtime,
 							tui,
 							theme,
@@ -197,7 +200,8 @@ export function registerSubagentsCommand(
 									);
 								},
 							},
-						),
+						);
+					},
 					{
 						overlay: true,
 						overlayOptions: {
@@ -210,10 +214,27 @@ export function registerSubagentsCommand(
 				);
 			} catch (error) {
 				notify(ctx, `Subagents UI failed: ${errorMessage(error)}`, "warning");
+			} finally {
+				restoreAltScreenPaging?.();
 			}
 			await saveQueue;
 		},
 	});
+}
+
+function suspendAltScreenPaging(
+	keybindings:
+		| Pick<KeybindingsManager, "getUserBindings" | "setUserBindings">
+		| undefined,
+): () => void {
+	if (!keybindings) return () => {};
+	const userBindings = keybindings.getUserBindings();
+	keybindings.setUserBindings({
+		...userBindings,
+		"tui.altScreen.pageUp": [],
+		"tui.altScreen.pageDown": [],
+	});
+	return () => keybindings.setUserBindings(userBindings);
 }
 
 function getArgumentCompletions(prefix: string) {

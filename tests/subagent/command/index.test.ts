@@ -1,10 +1,53 @@
 import { describe, expect, it, mock } from "bun:test";
+import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { registerSubagentsCommand } from "../../../extensions/subagent/command/index.js";
 import { DEFAULT_SUBAGENT_SETTINGS } from "../../../extensions/subagent/settings.js";
 import { eventually } from "../helpers/eventually.js";
 import { fakeAgent } from "../helpers/fake-agent.js";
 
 describe("subagents command registration", () => {
+	it("routes page keys to the overlay inspector while it is open", async () => {
+		let handler: any;
+		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
+		const manager = {
+			configure: mock(),
+			listConversations: () => [],
+			onConversationUpdate: () => () => {},
+		};
+		registerSubagentsCommand(
+			{
+				registerCommand: (_name: string, registration: any) => {
+					handler = registration.handler;
+				},
+			} as any,
+			manager as any,
+			{
+				load: async () => ({ settings: DEFAULT_SUBAGENT_SETTINGS }),
+				save: async () => {},
+			},
+		);
+
+		let viewportBindingsDuringOverlay: [boolean, boolean] | undefined;
+		await handler("conversations", {
+			hasUI: true,
+			ui: {
+				custom: async (factory: any) => {
+					factory({ requestRender() {} }, {}, keybindings, () => {});
+					viewportBindingsDuringOverlay = [
+						keybindings.matches("\x1b[5~", "tui.altScreen.pageUp"),
+						keybindings.matches("\x1b[6~", "tui.altScreen.pageDown"),
+					];
+				},
+			},
+		});
+
+		expect(viewportBindingsDuringOverlay).toEqual([false, false]);
+		expect(keybindings.matches("\x1b[5~", "tui.select.pageUp")).toBe(true);
+		expect(keybindings.matches("\x1b[6~", "tui.select.pageDown")).toBe(true);
+		expect(keybindings.matches("\x1b[5~", "tui.altScreen.pageUp")).toBe(true);
+		expect(keybindings.matches("\x1b[6~", "tui.altScreen.pageDown")).toBe(true);
+	});
+
 	it("applies settings before starting work and persists them", async () => {
 		let handler: any;
 		const configure = mock();
