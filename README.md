@@ -16,6 +16,7 @@ pi-stuff/
 │   ├── accounts/         # named subscription OAuth account switching
 │   ├── dynamic-resources/  # index.ts + skill/data
 │   ├── plan-mode/          # index.ts + utils.ts (registers --plan flag)
+│   ├── todo/              # phased, session-aware todo planning
 │   └── subagent_deprecated/ # deprecated subagent implementation
 ├── tests/                # extension tests and shared test helpers
 ├── prompts/              # prompt templates (.md) — package resource
@@ -29,10 +30,11 @@ custom-header, dynamic-tools, git-merge-and-resolve, handoff,
 hidden-thinking-label, inline-bash, interactive-shell, message-renderer,
 model-status, notify, permission-gate, prompt-customizer, protected-paths,
 qna, rainbow-editor, status-line, structured-output, summarize,
-titlebar-spinner, todo, tools, truncated-tool, widget-placement,
+titlebar-spinner, tools, truncated-tool, widget-placement,
 working-indicator.
 
-**Directory:** `accounts`, `dynamic-resources`, `plan-mode`, `subagent_deprecated`.
+**Directory:** `accounts`, `dynamic-resources`, `plan-mode`, `todo`,
+`subagent_deprecated`.
 
 ### Accounts
 
@@ -44,6 +46,15 @@ file lock, and keeps each provider's active account independent.
 The extension is loaded automatically by the package's
 `extensions/*/index.ts` manifest entry. Its tests live under
 `tests/accounts/`.
+
+### Todo
+
+`extensions/todo` provides a phased, session-aware `todo` tool with branch
+restoration, transient reminders, native result rendering, and a persistent
+plan widget. Its tests live under `tests/todo/`.
+
+The former flat sample extension is kept as `extensions/todo_deprecated.ts` and
+is explicitly excluded from the package manifest.
 
 ## Prompts & themes
 
@@ -86,7 +97,11 @@ package loads (narrows the manifest, never widens):
   "packages": [
     {
       "source": "/path/to/pi-stuff",
-      "extensions": ["extensions/*.ts", "!extensions/todo.ts"],
+      "extensions": [
+        "extensions/*.ts",
+        "extensions/*/index.ts",
+        "!extensions/todo/index.ts"
+      ],
       "prompts":    [],
       "themes":     ["+themes/opus-console.json"]
     }

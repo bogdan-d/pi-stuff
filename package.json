@@ -32,7 +32,7 @@
 			"!extensions/rainbow-editor.ts",
 			"!extensions/structured-output.ts",
 			"!extensions/subagent_deprecated/index.ts",
-			"!extensions/todo.ts"
+			"!extensions/todo_deprecated.ts"
 		],
 		"prompts": [
 			"prompts"
