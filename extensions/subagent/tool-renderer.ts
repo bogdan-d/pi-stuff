@@ -12,6 +12,7 @@ import type {
 } from "./agents.js";
 import {
 	GENERATION_STATUSES,
+	type GenerationInitiator,
 	type GenerationKind,
 	type GenerationPhase,
 	type GenerationRef,
@@ -109,6 +110,7 @@ export interface GenerationHistoryRenderItem
 	extends GenerationMetricsRenderItem {
 	generation: number;
 	kind: GenerationKind;
+	initiatedBy: GenerationInitiator;
 	status: SubagentStatus;
 	joined: boolean;
 	steers: readonly SteerReceipt[];

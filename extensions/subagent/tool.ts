@@ -815,6 +815,7 @@ function projectInspection(
 	const history = generations.slice(0, -1).map((historicalGeneration) => ({
 		generation: historicalGeneration.generation,
 		kind: historicalGeneration.kind,
+		initiatedBy: historicalGeneration.initiatedBy,
 		status: projectSubagentStatus(historicalGeneration.status),
 		joined: historicalGeneration.joined,
 		...generationMetrics(historicalGeneration, now),

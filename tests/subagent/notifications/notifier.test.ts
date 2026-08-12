@@ -18,6 +18,7 @@ function fixture(
 	}> = [];
 	const generation: any = {
 		generation: 1,
+		initiatedBy: "model",
 		createdAt: 1,
 		observerCount: 0,
 		joined: false,
@@ -50,6 +51,15 @@ function fixture(
 			conversations
 				.find((value) => value.conversationId === ref.conversationId)
 				?.generations.find((value: any) => value.generation === ref.generation),
+		isModelSubscribed: (ref: {
+			conversationId: string;
+			generation: number;
+		}) => {
+			const value = conversations
+				.find((item) => item.conversationId === ref.conversationId)
+				?.generations.find((item: any) => item.generation === ref.generation);
+			return value?.modelSubscribed ?? value?.initiatedBy !== "user";
+		},
 		projectSubagent: (id: string) => {
 			const conversation = conversations.find(
 				(value) => value.conversationId === id,
@@ -67,6 +77,7 @@ function fixture(
 				label: conversation.label ?? conversation.agent.name,
 				agent: conversation.agent.name,
 				generation: latest.generation,
+				initiatedBy: latest.initiatedBy ?? "model",
 				status,
 				joined: latest.joined,
 				actionHints: ["inspect", "join", "remove"],
@@ -157,6 +168,80 @@ test("notifies a terminal generation once without leaking output", () => {
 	f.notifier.unsubscribe();
 });
 
+test("user-started completion notifies the UI and queues awareness without waking the model", () => {
+	const f = fixture();
+	f.generation.initiatedBy = "user";
+	f.fire("session_start");
+	f.flush();
+
+	assert.equal(f.sent.length, 1);
+	assert.equal(f.sent[0].message.customType, "subagent-activity");
+	assert.deepEqual(f.sent[0].options, { deliverAs: "nextTurn" });
+	assert.match(f.sent[0].message.content, /initiatedBy="user"/);
+	assert.deepEqual(f.notified, [
+		{
+			message: "1 subagent finished: worker (primary task) · completed",
+			level: "info",
+		},
+	]);
+	f.notifier.unsubscribe();
+});
+
+test("user activity reconciles to current status and coalesces active and finished notices", () => {
+	const f = fixture();
+	f.generation.initiatedBy = "user";
+	f.generation.status = { kind: "running", startedAt: 1 };
+	f.fire("session_start");
+	f.flush();
+	const active = { role: "custom", ...f.sent[0].message };
+
+	f.generation.status = {
+		kind: "done",
+		outcome: "completed",
+		startedAt: 1,
+		completedAt: 2,
+	};
+	f.update("status");
+	f.flush(500);
+	const finished = { role: "custom", ...f.sent[1].message };
+	const reconciled: any[] = f.notifier.reconcileMessages([
+		active,
+		finished,
+	] as never);
+
+	assert.equal(reconciled.length, 1);
+	assert.match(reconciled[0].content, /status="completed"/);
+	assert.equal(f.notified.length, 1);
+	f.notifier.unsubscribe();
+});
+
+test("queued user activity disappears after the model subscribes", () => {
+	const f = fixture();
+	f.generation.initiatedBy = "user";
+	f.generation.status = { kind: "running", startedAt: 1 };
+	f.fire("session_start");
+	f.flush();
+	const queued = { role: "custom", ...f.sent[0].message };
+
+	f.generation.modelSubscribed = true;
+	assert.deepEqual(f.notifier.reconcileMessages([queued] as never), []);
+	f.notifier.unsubscribe();
+});
+
+test("subscribed user-started work reports completion to the model without an activity notice", () => {
+	const f = fixture();
+	f.generation.initiatedBy = "user";
+	f.generation.modelSubscribed = true;
+	f.fire("session_start");
+	f.flush();
+
+	assert.equal(f.sent.length, 1);
+	assert.equal(f.sent[0].message.customType, "subagent-completion");
+	assert.deepEqual(f.sent[0].options, { triggerTurn: true });
+	assert.equal(f.notified.length, 1);
+	f.notifier.unsubscribe();
+});
+
 test("context reconciliation removes a queued completion observed before model delivery", () => {
 	const f = fixture();
 	f.fire("session_start");
@@ -230,7 +315,7 @@ test("context reconciliation rebuilds a completion batch from still-unobserved g
 		reconciled[0].content,
 		[
 			"<subagent-notification>",
-			'  <subagent subagentId="still-forest" generation="1" status="failed" agent="explorer" label="second &lt;task&gt;" joined="false" actionHints="inspect,join,remove" failure="Subagent failed: unknown error"/>',
+			'  <subagent subagentId="still-forest" generation="1" initiatedBy="model" status="failed" agent="explorer" label="second &lt;task&gt;" joined="false" actionHints="inspect,join,remove" failure="Subagent failed: unknown error"/>',
 			"</subagent-notification>",
 		].join("\n"),
 	);
@@ -510,6 +595,36 @@ test("none mode and joined generations are ineligible", () => {
 	joined.flush();
 	assert.equal(joined.sent.length, 0);
 	joined.notifier.unsubscribe();
+});
+
+test("none mode still queues user-started activity for the next natural turn", () => {
+	const f = fixture("none");
+	f.generation.initiatedBy = "user";
+	f.fire("session_start");
+	f.flush();
+
+	assert.equal(f.sent.length, 1);
+	assert.equal(f.sent[0].message.customType, "subagent-activity");
+	assert.deepEqual(f.sent[0].options, { deliverAs: "nextTurn" });
+	assert.equal(f.notified.length, 0);
+	f.notifier.unsubscribe();
+});
+
+test("none mode preserves retries after synchronous user-activity delivery failure", () => {
+	let attempts = 0;
+	const f = fixture("none", true, () => {
+		if (++attempts === 1) throw new Error("closed");
+	});
+	f.generation.initiatedBy = "user";
+	f.fire("session_start");
+	f.flush();
+	assert.equal(f.sent.length, 1);
+
+	f.flush(500);
+	assert.equal(f.sent.length, 2);
+	assert.equal(f.sent[1].message.customType, "subagent-activity");
+	assert.deepEqual(f.sent[1].options, { deliverAs: "nextTurn" });
+	f.notifier.unsubscribe();
 });
 
 test("tool execution end releases claims when execution was rejected before the tool ran", () => {
@@ -1043,6 +1158,22 @@ test("same-preflight join claims completion before a steer notification is deliv
 	});
 	f.flush();
 	assert.equal(f.sent.length, 0);
+	f.notifier.unsubscribe();
+});
+
+test("synchronous model delivery failure retries independently of the UI notification", () => {
+	let attempts = 0;
+	const f = fixture("auto", true, () => {
+		if (++attempts === 1) throw new Error("closed");
+	});
+	f.fire("session_start");
+	f.flush();
+	assert.equal(f.sent.length, 1);
+	assert.equal(f.notified.length, 1);
+
+	f.flush(500);
+	assert.equal(f.sent.length, 2);
+	assert.equal(f.notified.length, 1);
 	f.notifier.unsubscribe();
 });
 

@@ -19,6 +19,7 @@ import type { ConversationId } from "./identifiers.js";
 import type { SpawnRequest } from "./schema.js";
 
 export type GenerationKind = "spawn" | "resume";
+export type GenerationInitiator = "user" | "model";
 
 export const GENERATION_OUTCOME_STATUSES = [
 	"completed",
@@ -71,6 +72,7 @@ export interface SteerReceipt {
 }
 interface TrackedSteerReceipt extends SteerReceipt {
 	deliveryText: string;
+	sentBy: GenerationInitiator;
 	state: SteerState;
 	deliveredAt?: number;
 	processedAt?: number;
@@ -148,6 +150,7 @@ export interface NestedJoinAttemptSnapshot {
 export interface GenerationSnapshot {
 	readonly generation: number;
 	readonly kind: GenerationKind;
+	readonly initiatedBy: GenerationInitiator;
 	readonly startedInParentGeneration?: number;
 	readonly prompt: string;
 	readonly createdAt: number;
@@ -197,6 +200,7 @@ export class Generation {
 	readonly activity: GenerationActivity;
 	readonly number: number;
 	readonly prompt: string;
+	readonly initiatedBy: GenerationInitiator;
 	private readonly onChange: GenerationActivityListener;
 	readonly startedInParentGeneration: number | undefined;
 	state: GenerationState = { kind: "queued" };
@@ -212,15 +216,19 @@ export class Generation {
 	}> = [];
 	readonly steers: TrackedSteerReceipt[] = [];
 	sessionMessageStart = 0;
+	private modelSubscribed: boolean;
 
 	constructor(
 		number: number,
 		prompt: string,
+		initiatedBy: GenerationInitiator,
 		onChange: GenerationActivityListener,
 		startedInParentGeneration?: number,
 	) {
 		this.number = number;
 		this.prompt = prompt;
+		this.initiatedBy = initiatedBy;
+		this.modelSubscribed = initiatedBy === "model";
 		this.onChange = onChange;
 		this.startedInParentGeneration = startedInParentGeneration;
 		if (!Number.isSafeInteger(number) || number < 1)
@@ -242,6 +250,12 @@ export class Generation {
 	get kind(): GenerationKind {
 		return this.number === 1 ? "spawn" : "resume";
 	}
+	get isModelSubscribed(): boolean {
+		return this.modelSubscribed;
+	}
+	subscribeModel(): void {
+		this.modelSubscribed = true;
+	}
 
 	attach(session: AgentSession): void {
 		if (this.state.kind !== "queued")
@@ -254,7 +268,7 @@ export class Generation {
 		this.state = { kind: "running", session, startedAt: Date.now() };
 	}
 
-	acceptSteer(deliveryText: string): SteerReceipt {
+	acceptSteer(deliveryText: string, sentBy: GenerationInitiator): SteerReceipt {
 		const state: SteerState =
 			this.state.kind === "running" ? "queued" : "discarded";
 		const receipt: TrackedSteerReceipt = {
@@ -262,6 +276,7 @@ export class Generation {
 			state,
 			acceptedAt: Date.now(),
 			deliveryText,
+			sentBy,
 		};
 		this.steers.push(receipt);
 		return projectSteer(receipt);
@@ -476,6 +491,7 @@ export class Conversation {
 			parentConversationId?: ConversationId;
 			startedInParentGeneration?: number;
 			resolvedSkillBlocks?: readonly string[];
+			initiatedBy?: GenerationInitiator;
 		} = {},
 	) {
 		this.conversationId = conversationId;
@@ -492,7 +508,12 @@ export class Conversation {
 				...(spawn.thinking !== undefined ? { thinking: spawn.thinking } : {}),
 			});
 		this.generations.push(
-			this.newGeneration(1, spawn.prompt, options.startedInParentGeneration),
+			this.newGeneration(
+				1,
+				spawn.prompt,
+				options.initiatedBy ?? "model",
+				options.startedInParentGeneration,
+			),
 		);
 	}
 
@@ -547,22 +568,29 @@ export class Conversation {
 	private newGeneration(
 		number: number,
 		prompt: string,
+		initiatedBy: GenerationInitiator,
 		startedInParentGeneration?: number,
 	): Generation {
 		return new Generation(
 			number,
 			prompt,
+			initiatedBy,
 			(update) => this.listener(this, update),
 			startedInParentGeneration,
 		);
 	}
 
-	beginResume(prompt: string, startedInParentGeneration?: number): Generation {
+	beginResume(
+		prompt: string,
+		initiatedBy: GenerationInitiator = "model",
+		startedInParentGeneration?: number,
+	): Generation {
 		if (!this.isResumeAllowed)
 			throw new Error(`Conversation ${this.conversationId} cannot be resumed.`);
 		const generation = this.newGeneration(
 			this.generations.length + 1,
 			prompt,
+			initiatedBy,
 			startedInParentGeneration,
 		);
 		this.generations.push(generation);
@@ -601,7 +629,11 @@ export class Conversation {
 		this.finishStopping(generation);
 	}
 
-	steer(generation: Generation, prompt: string): Promise<SteerReceipt> {
+	steer(
+		generation: Generation,
+		prompt: string,
+		sentBy: GenerationInitiator = "model",
+	): Promise<SteerReceipt> {
 		const pending = this.steerTail.then(async () => {
 			if (this.stopping)
 				throw new GenerationSteerError(generation.number, "stopping");
@@ -622,7 +654,7 @@ export class Conversation {
 			await session.steer(prompt);
 			const deliveryText = session.getSteeringMessages?.().at(-1) ?? prompt;
 			if (this.stopping) clearSessionQueue(session);
-			const receipt = generation.acceptSteer(deliveryText);
+			const receipt = generation.acceptSteer(deliveryText, sentBy);
 			this.listener(this, "steer");
 			return receipt;
 		});
@@ -833,6 +865,7 @@ export class Conversation {
 		return Object.freeze({
 			generation: generation.number,
 			kind: generation.kind,
+			initiatedBy: generation.initiatedBy,
 			...(generation.startedInParentGeneration !== undefined
 				? { startedInParentGeneration: generation.startedInParentGeneration }
 				: {}),

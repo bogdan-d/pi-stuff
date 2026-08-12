@@ -123,6 +123,63 @@ test("resume preserves conversation ownership and records exact generation prove
 	});
 });
 
+test("generation initiator follows each start or resume rather than conversation origin", async () => {
+	const manager = new SubagentRuntime(registry, 1, executor);
+	const initial = manager.startTasks(
+		ctx,
+		[
+			{ kind: "spawn", agent: "worker", prompt: "user start", label: "shared" },
+		] as any,
+		{ initiatedBy: "user" },
+	);
+	await initial.completion;
+	const started = initial.starts[0] as any;
+	expect(manager.projectSubagent(started.conversationId)).toMatchObject({
+		generation: 1,
+		initiatedBy: "user",
+	});
+	expect(manager.isModelSubscribed(started)).toBe(false);
+
+	joinLatest(manager, started.conversationId);
+	const modelResume = manager.startTasks(ctx, [
+		{
+			kind: "resume",
+			subagentId: started.conversationId,
+			prompt: "model follow-up",
+		},
+	] as any);
+	await modelResume.completion;
+	expect(manager.projectSubagent(started.conversationId)).toMatchObject({
+		generation: 2,
+		initiatedBy: "model",
+	});
+	expect(
+		manager.isModelSubscribed({
+			conversationId: started.conversationId,
+			generation: 2,
+		}),
+	).toBe(true);
+
+	joinLatest(manager, started.conversationId);
+	const userResume = manager.startTasks(
+		ctx,
+		[
+			{
+				kind: "resume",
+				subagentId: started.conversationId,
+				prompt: "user follow-up",
+			},
+		] as any,
+		{ initiatedBy: "user" },
+	);
+	await userResume.completion;
+	expect(
+		manager
+			.conversation(started.conversationId)
+			.generations.map((generation) => generation.initiatedBy),
+	).toEqual(["user", "model", "user"]);
+});
+
 test("generation lineage finds resumed children and remains readable for historical owners", async () => {
 	const manager = new SubagentRuntime(registry, 2, executor);
 	const ownerStart = manager.startTasks(ctx, [
@@ -1711,6 +1768,41 @@ test("steering targets an exact running generation without creating history", as
 	).rejects.toThrow(
 		`Subagent ${started.conversationId} is completed and cannot be steered.`,
 	);
+});
+
+test("only model steering subscribes user-started work to completion delivery", async () => {
+	let finish!: () => void;
+	const controlled = async (_ctx: any, agent: any, attempt: any) => {
+		agent.bindSession(attempt, session());
+		await new Promise<void>((done) => {
+			finish = done;
+		});
+		return completedGeneration(agent, attempt, attempt.prompt);
+	};
+	const manager = new SubagentRuntime(registry, 1, controlled);
+	const batch = manager.startTasks(
+		ctx,
+		[{ kind: "spawn", agent: "worker", prompt: "work", label: "work" }],
+		{ initiatedBy: "user" },
+	);
+	const started = batch.starts[0] as any;
+	await new Promise((done) => setImmediate(done));
+
+	expect(manager.isModelSubscribed(started)).toBe(false);
+	await manager.steerSubagent(
+		started.conversationId,
+		"user note",
+		undefined,
+		"user",
+	);
+	expect(manager.isModelSubscribed(started)).toBe(false);
+	manager.inspectSubagents([started.conversationId]);
+	expect(manager.isModelSubscribed(started)).toBe(false);
+	await manager.steerSubagent(started.conversationId, "model direction");
+	expect(manager.isModelSubscribed(started)).toBe(true);
+
+	finish();
+	await batch.completion;
 });
 
 test("terminal action errors use only public lifecycle statuses", async () => {

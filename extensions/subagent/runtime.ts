@@ -16,6 +16,7 @@ import {
 	effectiveStatus,
 	type Generation,
 	type GenerationBinding,
+	type GenerationInitiator,
 	type GenerationRef,
 	type GenerationSnapshot,
 	GenerationSteerError,
@@ -266,6 +267,7 @@ export class SubagentRuntime {
 				label: conversation.label,
 				agent: conversation.agentName,
 				generation: latest.generation,
+				initiatedBy: latest.initiatedBy,
 				generationStatus: latest.status,
 				joined: latest.joined,
 				directlyOwned,
@@ -281,11 +283,15 @@ export class SubagentRuntime {
 	startTasks(
 		ctx: ExtensionContext,
 		tasks: readonly (SpawnRequest | ResumeRequest)[],
-		options: { caller?: SubagentCaller } = {},
+		options: {
+			caller?: SubagentCaller;
+			initiatedBy?: GenerationInitiator;
+		} = {},
 	): GenerationHandle {
 		const starts: OrderedStartOutcome[] = [];
 		const executions: Promise<unknown>[] = [];
 		const caller = options.caller;
+		const initiatedBy = options.initiatedBy ?? "model";
 		let callerError: string | undefined;
 		if (caller)
 			try {
@@ -299,8 +305,8 @@ export class SubagentRuntime {
 			const reservation: Reservation = callerError
 				? { error: callerError }
 				: task.kind === "spawn"
-					? this.reserveSpawn(ctx, task, caller)
-					: this.reserveResume(task, caller);
+					? this.reserveSpawn(ctx, task, caller, initiatedBy)
+					: this.reserveResume(task, caller, initiatedBy);
 			if ("error" in reservation) {
 				starts.push({ ok: false, inputIndex, error: reservation.error });
 				continue;
@@ -327,7 +333,8 @@ export class SubagentRuntime {
 	private reserveSpawn(
 		ctx: ExtensionContext,
 		task: SpawnRequest,
-		caller?: SubagentCaller,
+		caller: SubagentCaller | undefined,
+		initiatedBy: GenerationInitiator,
 	): Reservation {
 		const definition = this.registry.agents.get(task.agent);
 		if (!definition) return { error: `Unknown agent: ${task.agent}.` };
@@ -368,6 +375,7 @@ export class SubagentRuntime {
 						}
 					: {}),
 				resolvedSkillBlocks: skills.value,
+				initiatedBy,
 			},
 		);
 		this.conversations.set(conversationId, conversation);
@@ -376,7 +384,8 @@ export class SubagentRuntime {
 
 	private reserveResume(
 		task: ResumeRequest,
-		caller?: SubagentCaller,
+		caller: SubagentCaller | undefined,
+		initiatedBy: GenerationInitiator,
 	): Reservation {
 		const conversation = task.subagentId
 			? this.conversations.get(task.subagentId)
@@ -416,6 +425,7 @@ export class SubagentRuntime {
 			conversation,
 			generation: conversation.beginResume(
 				task.prompt,
+				initiatedBy,
 				caller?.generation.number,
 			),
 		};
@@ -425,11 +435,17 @@ export class SubagentRuntime {
 		subagentId: SubagentId,
 		prompt: string,
 		caller?: SubagentCaller,
+		initiatedBy: GenerationInitiator = "model",
 	): Promise<SteerResult> {
 		const record = this.latestSubagentRecord(subagentId);
 		this.assertDirectOwner(record.conversation, caller, "steer");
 		try {
-			const steer = await record.conversation.steer(record.generation, prompt);
+			const steer = await record.conversation.steer(
+				record.generation,
+				prompt,
+				initiatedBy,
+			);
+			if (initiatedBy === "model") record.generation.subscribeModel();
 			return {
 				conversationId: record.conversation.conversationId,
 				generation: record.generation.number,
@@ -586,6 +602,9 @@ export class SubagentRuntime {
 	generationSnapshot(reference: GenerationRef): GenerationSnapshot {
 		const { conversation, generation } = this.resolveGeneration(reference);
 		return conversation.generationSnapshot(generation);
+	}
+	isModelSubscribed(reference: GenerationRef): boolean {
+		return this.resolveGeneration(reference).generation.isModelSubscribed;
 	}
 	generationCaller(reference: GenerationRef): SubagentCaller {
 		const { conversation, generation } = this.resolveGeneration(reference);

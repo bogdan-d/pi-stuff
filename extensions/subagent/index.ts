@@ -295,6 +295,7 @@ export function projectSubagentGenerationIndex(
 		agent: snapshot.agent.name,
 		...(snapshot.label ? { label: snapshot.label } : {}),
 		kind: generation.kind,
+		initiatedBy: generation.initiatedBy,
 		status: generation.status.outcome,
 		completedAt: generation.status.completedAt,
 		...(generation.status.startedAt !== undefined
