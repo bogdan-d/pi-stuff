@@ -15,10 +15,9 @@ pi-stuff/
 │   ├── *.ts              # single-file extensions (26)
 │   ├── accounts/         # named subscription OAuth account switching
 │   ├── dynamic-resources/  # index.ts + skill/data
-│   ├── plan-mode/          # index.ts + utils.ts (registers --plan flag)
 │   ├── todo/              # phased, session-aware todo planning
 │   └── subagent/           # current subagent implementation
-├── deprecated-extensions/ # disabled implementations kept for reference
+├── deprecated-extensions/ # disabled implementations, including plan-mode
 ├── tests/                # extension tests and shared test helpers
 ├── prompts/              # prompt templates (.md) — package resource
 └── themes/               # themes (.json) — package resource
@@ -33,12 +32,12 @@ model-status, notify, permission-gate, protected-paths, qna, status-line,
 summarize, titlebar-spinner, tools, truncated-tool, widget-placement,
 working-indicator.
 
-**Directory:** `accounts`, `dynamic-resources`, `plan-mode`, `todo`, `subagent`.
+**Directory:** `accounts`, `dynamic-resources`, `todo`, `subagent`.
 
 **Deprecated reference implementations:** `deprecated-extensions/` contains
-the prompt customizer, rainbow editor, structured output, former flat todo,
-and former subagent implementations. They are not matched by the package's
-active extension globs.
+the plan mode, prompt customizer, rainbow editor, structured output, former
+flat todo, and former subagent implementations. They are not matched by the
+package's active extension globs.
 
 ### Accounts
 

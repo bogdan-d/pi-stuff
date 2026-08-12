@@ -5,7 +5,7 @@ import {
 	extractTodoItems,
 	isSafeCommand,
 	markCompletedSteps,
-} from "../extensions/plan-mode/utils.ts";
+} from "../deprecated-extensions/plan-mode/utils.ts";
 
 describe("plan mode utilities", () => {
 	test("allows read-only commands and blocks writes", () => {
