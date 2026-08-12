@@ -400,6 +400,7 @@ describe("ask extension integration", () => {
 				},
 			);
 			component.handleInput("\r");
+			component.handleInput("\r");
 			return completed;
 		});
 
@@ -577,6 +578,7 @@ describe("ask extension integration", () => {
 							},
 						);
 						component.handleInput(action === "answer" ? "\r" : "\x1b");
+						if (action === "answer") component.handleInput("\r");
 						return completed;
 					});
 					const result = await tool.execute(
@@ -885,7 +887,10 @@ describe("ask extension integration", () => {
 				},
 			);
 			if (cancel) component.handleInput("\x1b");
-			else component.handleInput("\r");
+			else {
+				component.handleInput("\r");
+				component.handleInput("\r");
+			}
 			return completed;
 		});
 		await tool.execute(
@@ -979,6 +984,7 @@ describe("ask extension integration", () => {
 					},
 				);
 				component.handleInput("\r");
+				component.handleInput("\r");
 				return result;
 			});
 			await handlers.get("session_tree")(
@@ -1071,6 +1077,7 @@ describe("ask extension integration", () => {
 				},
 			);
 			component.handleInput("\x1b[B");
+			component.handleInput("\r");
 			component.handleInput("\r");
 			return answer;
 		});
@@ -1166,6 +1173,7 @@ describe("ask extension integration", () => {
 				},
 			);
 			component.handleInput("\r");
+			component.handleInput("\r");
 			return result;
 		});
 		const ctx = replayContext([assistantEntry("ask-entry")], custom);
@@ -1197,6 +1205,7 @@ describe("ask extension integration", () => {
 					result = value;
 				},
 			);
+			component.handleInput("\r");
 			component.handleInput("\r");
 			return result;
 		});

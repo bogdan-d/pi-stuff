@@ -16,7 +16,7 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import type { DeadlineSignal } from "./deadline.js";
-import type { Ask, AskAnswer } from "./domain.js";
+import { type Ask, type AskAnswer, formatAskAnswer } from "./domain.js";
 import { CHECKED_BOX, EMPTY_BOX } from "./glyphs.js";
 import {
 	composePreviewRow,
@@ -134,7 +134,26 @@ export class AskComponent implements Component, Focusable {
 			this.requestRender();
 		}
 
-		if (this.questionnaireState.editor.kind !== "select") {
+		if (this.questionnaireState.review) {
+			if (matchesKey(data, Key.ctrl("c"))) {
+				this.cancel();
+			} else if (
+				this.matchesSelect(data, "tui.select.cancel") ||
+				this.matchesSelect(data, "tui.editor.cursorLeft")
+			) {
+				this.applyState(
+					transitionQuestionnaire(this.questionnaireState, { type: "back" }),
+				);
+				this.requestRender();
+			} else if (this.matchesSelect(data, "tui.select.confirm")) {
+				const next = transitionQuestionnaire(this.questionnaireState, {
+					type: "confirm",
+				});
+				this.applyState(next);
+				this.finishIfAnswered(next);
+				this.requestRender();
+			}
+		} else if (this.questionnaireState.editor.kind !== "select") {
 			// Escape is intentionally an editor operation: it discards the draft,
 			// while Ctrl+C remains the conventional way to cancel the whole ask.
 			if (matchesKey(data, Key.escape)) {
@@ -192,6 +211,9 @@ export class AskComponent implements Component, Focusable {
 
 	render(width: number): string[] {
 		const availableWidth = safeWidth(width);
+		if (this.questionnaireState.review)
+			return this.renderReview(availableWidth, this.questionnaireState.review);
+
 		const hasAuthoredPreviews = this.questionnaireState.rows.some(
 			(row) => row.kind === "option" && row.option.preview?.trim(),
 		);
@@ -431,7 +453,7 @@ export class AskComponent implements Component, Focusable {
 			: projected;
 	}
 
-	/** Submit the current multi-select answer programmatically. */
+	/** Open the review page for the current answer programmatically. */
 	submit(): void {
 		if (this.questionnaireState.answer || this.cancelled) return;
 		const next = transitionQuestionnaire(this.questionnaireState, {
@@ -530,7 +552,7 @@ export class AskComponent implements Component, Focusable {
 		addWrappedWithPrefix(
 			lines,
 			"",
-			`${marker}${this.config.theme.fg(selected ? "accent" : "text", "[ Submit ]")}`,
+			`${marker}${this.config.theme.fg(selected ? "accent" : "text", "[ Review ]")}`,
 			width,
 		);
 		return selected ? { start, end: lines.length } : undefined;
@@ -620,9 +642,11 @@ export class AskComponent implements Component, Focusable {
 	private applyState(next: QuestionnaireState): void {
 		const previousEditor = this.questionnaireState.editor;
 		const editorChanged = next.editor.kind !== previousEditor.kind;
+		const reviewChanged = next.review !== this.questionnaireState.review;
 		this.questionnaireState = next;
-		if (editorChanged) {
+		if (editorChanged || reviewChanged) {
 			this.editor.focused = this._focused && next.editor.kind !== "select";
+			if (next.review) this.editor.focused = false;
 			if (previousEditor.kind === "select" && next.editor.kind !== "select") {
 				this.editor.setText(next.editor.draft);
 			}
@@ -634,6 +658,52 @@ export class AskComponent implements Component, Focusable {
 		this.editor.focused = false;
 		this.stopCountdown();
 		this.config.onSubmit?.(state.answer);
+	}
+
+	private renderReview(width: number, answer: AskAnswer): string[] {
+		const lines: string[] = [];
+		const add = (line: string) => lines.push(fit(line, width));
+		add(
+			renderCountdownBorder(width, this.remainingSeconds(), this.config.theme),
+		);
+		addWrappedWithPrefix(
+			lines,
+			" ",
+			this.config.theme.bold(this.config.question),
+			width,
+		);
+		add("");
+		add(` ${this.config.theme.fg("accent", "Review answer")}`);
+		add("");
+		for (const line of formatAskAnswer(this.config, answer).split("\n")) {
+			addWrappedWithPrefix(
+				lines,
+				"   ",
+				this.config.theme.fg("text", line),
+				width,
+			);
+		}
+		add("");
+		const footerStart = lines.length;
+		add(` ${this.config.theme.fg("dim", this.reviewHelpText())}`);
+		add(this.config.theme.fg("border", "─".repeat(width)));
+
+		const maxRows = Number.isFinite(this.config.tui.terminal.rows)
+			? this.config.tui.terminal.rows
+			: lines.length;
+		return fitViewport(
+			lines,
+			undefined,
+			maxRows,
+			1,
+			lines.length - footerStart,
+		).map(({ value, overflow }) => projectFullRow(value, overflow, width));
+	}
+
+	private reviewHelpText(): string {
+		const submit = this.keyText("tui.select.confirm", "Enter");
+		const back = this.keyText("tui.editor.cursorLeft", "Left");
+		return `${submit} submit · ${back}/Esc back · Ctrl+C cancel`;
 	}
 
 	private remainingSeconds(): number | undefined {

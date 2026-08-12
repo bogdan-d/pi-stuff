@@ -56,14 +56,31 @@ function make(
 describe("AskComponent", () => {
 	initTheme("dark", false);
 
-	it("uses Enter for single-select and returns the selected option", () => {
+	it("reviews a single-select answer before submitting it", () => {
 		const { component, onSubmit } = make();
 		component.handleInput("\r");
 
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect(component.answer).toBeNull();
+		expect(component.render(80).join("\n")).toContain("Review answer");
+		expect(component.render(80).join("\n")).toContain("Selected: Staging");
+		component.handleInput("\r");
 		expect(onSubmit).toHaveBeenCalledWith({
 			selections: [{ option: 0 }],
 		});
 		expect(component.answer?.selections[0]?.option).toBe(0);
+	});
+
+	it("returns from review without cancelling or losing the selection", () => {
+		const { component, onSubmit, onCancel } = make();
+		component.handleInput("\r");
+		component.handleInput("\x1b");
+
+		expect(component.state.review).toBeNull();
+		expect(component.state.checked.has(0)).toBe(true);
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect(onCancel).not.toHaveBeenCalled();
+		expect(component.render(80).join("\n")).toContain("┃ Staging");
 	});
 
 	it("toggles multi-select options with Space and Enter, then submits from the button", () => {
@@ -81,7 +98,10 @@ describe("AskComponent", () => {
 
 		component.handleInput("\x1b[B");
 		component.handleInput("\x1b[B");
-		expect(component.render(80).join("\n")).toContain("┃ [ Submit ]");
+		expect(component.render(80).join("\n")).toContain("┃ [ Review ]");
+		component.handleInput("\r");
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect(component.render(80).join("\n")).toContain("Review answer");
 		component.handleInput("\r");
 
 		expect(onSubmit).toHaveBeenCalledWith({
@@ -172,6 +192,9 @@ describe("AskComponent", () => {
 
 		component.handleInput("Use the fallback");
 		component.handleInput("\r");
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect(component.render(80).join("\n")).toContain("Review answer");
+		component.handleInput("\r");
 		expect(onSubmit).toHaveBeenCalledWith({
 			selections: [],
 			freeform: "Use the fallback",
@@ -202,6 +225,8 @@ describe("AskComponent", () => {
 		);
 		component.handleInput(" ");
 		component.handleInput("\x1b[B");
+		component.handleInput("\r");
+		expect(onSubmit).not.toHaveBeenCalled();
 		component.handleInput("\r");
 		expect(onSubmit).toHaveBeenCalledWith({
 			selections: [],
@@ -292,7 +317,7 @@ describe("AskComponent", () => {
 		const lines = component.render(24);
 
 		expect(lines.length).toBeLessThanOrEqual(6);
-		expect(lines.join("\n")).toContain("[ Submit ]");
+		expect(lines.join("\n")).toContain("[ Review ]");
 	});
 
 	it("keeps the active editor cursor and latest line visible in a short terminal", () => {
@@ -636,6 +661,8 @@ describe("AskComponent", () => {
 		});
 		const confirmed = make({ keybindings: confirmWithC });
 		confirmed.component.handleInput("c");
+		expect(confirmed.onSubmit).not.toHaveBeenCalled();
+		confirmed.component.handleInput("c");
 		expect(confirmed.onSubmit).toHaveBeenCalledOnce();
 		expect(confirmed.component.state.editor.kind).toBe("select");
 
@@ -674,6 +701,8 @@ describe("AskComponent", () => {
 		component.handleInput("k");
 		expect(component.state.highlightedRow).toBe(0);
 
+		component.handleInput("x");
+		expect(onSubmit).not.toHaveBeenCalled();
 		component.handleInput("x");
 		expect(onSubmit).toHaveBeenCalledOnce();
 		expect(onCancel).not.toHaveBeenCalled();

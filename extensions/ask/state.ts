@@ -29,6 +29,7 @@ export interface QuestionnaireState {
 	freeformDraft: string;
 	freeformChecked: boolean;
 	editor: QuestionnaireEditor;
+	review: AskAnswer | null;
 	answer: AskAnswer | null;
 }
 
@@ -40,7 +41,9 @@ export type QuestionnaireEvent =
 	| { type: "edit"; value: string }
 	| { type: "saveEditor" }
 	| { type: "cancelEditor" }
-	| { type: "submit" };
+	| { type: "submit" }
+	| { type: "confirm" }
+	| { type: "back" };
 
 export function createQuestionnaireState(
 	input: QuestionnaireInput,
@@ -60,6 +63,7 @@ export function createQuestionnaireState(
 		freeformDraft: "",
 		freeformChecked: false,
 		editor: { kind: "select" },
+		review: null,
 		answer: null,
 	};
 }
@@ -73,7 +77,7 @@ export function transitionQuestionnaire(
 
 	switch (event.type) {
 		case "move":
-			if (next.editor.kind === "select") {
+			if (next.editor.kind === "select" && !next.review) {
 				next.highlightedRow = wrapRow(
 					next.highlightedRow + event.delta,
 					next.rows.length,
@@ -81,13 +85,13 @@ export function transitionQuestionnaire(
 			}
 			break;
 		case "activate":
-			if (next.editor.kind === "select") activateRow(next);
+			if (next.editor.kind === "select" && !next.review) activateRow(next);
 			break;
 		case "toggle":
-			if (next.editor.kind === "select") toggleRow(next);
+			if (next.editor.kind === "select" && !next.review) toggleRow(next);
 			break;
 		case "openComment": {
-			if (next.editor.kind !== "select") break;
+			if (next.editor.kind !== "select" || next.review) break;
 			const row = currentRow(next);
 			if (row.kind !== "option") break;
 			next.editor = {
@@ -115,7 +119,7 @@ export function transitionQuestionnaire(
 			}
 			next.editor = { kind: "select" };
 			if (editor.kind === "freeform" && !next.config.allowMultiple && saved) {
-				next.answer = finalAnswer(next);
+				next.review = finalAnswer(next);
 			}
 			break;
 		}
@@ -123,7 +127,13 @@ export function transitionQuestionnaire(
 			if (next.editor.kind !== "select") next.editor = { kind: "select" };
 			break;
 		case "submit":
-			next.answer = finalAnswer(next);
+			next.review = finalAnswer(next);
+			break;
+		case "confirm":
+			if (next.review) next.answer = next.review;
+			break;
+		case "back":
+			next.review = null;
 			break;
 	}
 	return next;
@@ -157,7 +167,7 @@ function activateRow(state: QuestionnaireState): void {
 			openFreeform(state, row);
 			break;
 		case "submit":
-			state.answer = finalAnswer(state);
+			state.review = finalAnswer(state);
 			break;
 	}
 }
@@ -174,7 +184,7 @@ function toggleRow(state: QuestionnaireState): void {
 			else openFreeform(state, row);
 			break;
 		case "submit":
-			state.answer = finalAnswer(state);
+			state.review = finalAnswer(state);
 			break;
 	}
 }
@@ -182,7 +192,7 @@ function toggleRow(state: QuestionnaireState): void {
 function toggleOption(state: QuestionnaireState, option: number): void {
 	if (!state.config.allowMultiple) {
 		state.checked = new Set([option]);
-		state.answer = finalAnswer(state);
+		state.review = finalAnswer(state);
 	} else if (state.checked.has(option)) {
 		state.checked.delete(option);
 	} else {

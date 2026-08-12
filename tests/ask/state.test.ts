@@ -20,10 +20,13 @@ describe("questionnaire state", () => {
 		expect(state.editor.kind).toBe("select");
 	});
 
-	it("single-select finalizes the highlighted option", () => {
+	it("single-select reviews the highlighted option before confirmation", () => {
 		let state = createQuestionnaireState({ ...config, allowMultiple: false });
 		state = transitionQuestionnaire(state, { type: "move", delta: 1 });
 		state = transitionQuestionnaire(state, { type: "toggle" });
+		expect(state.answer).toBeNull();
+		expect(state.review).toEqual({ selections: [{ option: 1 }] });
+		state = transitionQuestionnaire(state, { type: "confirm" });
 		expect(state.answer).toEqual({ selections: [{ option: 1 }] });
 	});
 
@@ -46,6 +49,7 @@ describe("questionnaire state", () => {
 		});
 		state = transitionQuestionnaire(state, { type: "saveEditor" });
 		state = transitionQuestionnaire(state, { type: "toggle" });
+		state = transitionQuestionnaire(state, { type: "confirm" });
 		expect(state.answer).toEqual({
 			selections: [{ option: 0, comment: "preferred" }],
 		});
@@ -99,6 +103,9 @@ describe("questionnaire state", () => {
 		state = transitionQuestionnaire(state, { type: "edit", value: "  Zig  " });
 		state = transitionQuestionnaire(state, { type: "saveEditor" });
 		expect(state.freeformDraft).toBe("Zig");
+		expect(state.answer).toBeNull();
+		expect(state.review).toEqual({ selections: [], freeform: "Zig" });
+		state = transitionQuestionnaire(state, { type: "confirm" });
 		expect(state.answer).toEqual({ selections: [], freeform: "Zig" });
 	});
 
@@ -131,6 +138,12 @@ describe("questionnaire state", () => {
 		expect(state.freeformDraft).toBe("and Zig");
 		expect(state.freeformChecked).toBe(true);
 		state = transitionQuestionnaire(state, { type: "submit" });
+		expect(state.answer).toBeNull();
+		expect(state.review).toEqual({
+			selections: [{ option: 0, comment: "preferred" }],
+			freeform: "and Zig",
+		});
+		state = transitionQuestionnaire(state, { type: "confirm" });
 		expect(state.answer).toEqual({
 			selections: [{ option: 0, comment: "preferred" }],
 			freeform: "and Zig",
@@ -187,11 +200,23 @@ describe("questionnaire state", () => {
 		});
 	});
 
-	it("activates the submit row", () => {
+	it("activates the submit row to open review", () => {
 		let state = createQuestionnaireState(config);
 		state = transitionQuestionnaire(state, { type: "move", delta: 3 });
 		state = transitionQuestionnaire(state, { type: "toggle" });
-		expect(state.answer).toEqual({ selections: [] });
+		expect(state.answer).toBeNull();
+		expect(state.review).toEqual({ selections: [] });
+	});
+
+	it("returns from review without losing the draft answer", () => {
+		let state = createQuestionnaireState(config);
+		state = transitionQuestionnaire(state, { type: "toggle" });
+		state = transitionQuestionnaire(state, { type: "submit" });
+		state = transitionQuestionnaire(state, { type: "back" });
+
+		expect(state.review).toBeNull();
+		expect(state.answer).toBeNull();
+		expect([...state.checked]).toEqual([0]);
 	});
 
 	it("saves comments to their explicit canonical editor target", () => {
@@ -229,6 +254,7 @@ describe("questionnaire state", () => {
 		state = transitionQuestionnaire(state, { type: "move", delta: 1 });
 		state = transitionQuestionnaire(state, { type: "toggle" });
 		state = transitionQuestionnaire(state, { type: "submit" });
+		state = transitionQuestionnaire(state, { type: "confirm" });
 		expect(state.answer).toEqual({ selections: [{ option: 1 }] });
 	});
 });

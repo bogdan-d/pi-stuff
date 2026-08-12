@@ -57,8 +57,10 @@ function uiHarness(action: "submit" | "cancel" | "deadline" = "submit") {
 		const component = createComponent(factory, (value) => {
 			result = value;
 		});
-		if (action === "submit") component.handleInput("\r");
-		else if (action === "cancel") component.handleInput("\x1b");
+		if (action === "submit") {
+			component.handleInput("\r");
+			component.handleInput("\r");
+		} else if (action === "cancel") component.handleInput("\x1b");
 		else {
 			component.handleInput("\x1b[B");
 			component.cancel();
