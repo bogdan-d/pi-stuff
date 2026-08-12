@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { SubagentRunError } from "../extensions/subagent_deprecated/runner.js";
-import { SubagentManager } from "../extensions/subagent_deprecated/runs.js";
+import { SubagentRunError } from "../deprecated-extensions/subagent_deprecated/runner.js";
+import { SubagentManager } from "../deprecated-extensions/subagent_deprecated/runs.js";
 
 const usage = {
 	input: 1,

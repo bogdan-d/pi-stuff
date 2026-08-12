@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is a private Bun/TypeScript package for Pi coding agent extensions. `package.json` is both the Bun manifest and Pi package manifest. Source lives under `extensions/`: single-file extensions are `extensions/*.ts`, while multi-file extensions use folders such as `extensions/subagent_deprecated/` and `extensions/plan-mode/` with an `index.ts` entry. Prompt templates live in `prompts/*.md`; theme JSON files live in `themes/*.json`. TypeScript config only includes `extensions/**/*.ts`, so code outside that tree is not typechecked.
+This repository is a private Bun/TypeScript package for Pi coding agent extensions. `package.json` is both the Bun manifest and Pi package manifest. Active source lives under `extensions/`: single-file extensions are `extensions/*.ts`, while multi-file extensions use folders such as `extensions/plan-mode/` with an `index.ts` entry. Deprecated reference implementations live under `deprecated-extensions/` and are outside the package extension globs. Prompt templates live in `prompts/*.md`; theme JSON files live in `themes/*.json`. TypeScript config only includes `extensions/**/*.ts`, so deprecated code outside that tree is not typechecked.
 
 ## Build, Test, and Development Commands
 

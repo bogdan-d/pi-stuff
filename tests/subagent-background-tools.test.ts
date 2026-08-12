@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import {
 	createBackgroundAgentTools,
 	registerBackgroundAgentTools,
-} from "../extensions/subagent_deprecated/background-tools.js";
-import { notifyBackgroundSettled } from "../extensions/subagent_deprecated/index.js";
-import { SubagentManager } from "../extensions/subagent_deprecated/runs.js";
+} from "../deprecated-extensions/subagent_deprecated/background-tools.js";
+import { notifyBackgroundSettled } from "../deprecated-extensions/subagent_deprecated/index.js";
+import { SubagentManager } from "../deprecated-extensions/subagent_deprecated/runs.js";
 
 const usage = {
 	input: 1,

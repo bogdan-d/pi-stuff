@@ -17,7 +17,8 @@ pi-stuff/
 │   ├── dynamic-resources/  # index.ts + skill/data
 │   ├── plan-mode/          # index.ts + utils.ts (registers --plan flag)
 │   ├── todo/              # phased, session-aware todo planning
-│   └── subagent_deprecated/ # deprecated subagent implementation
+│   └── subagent/           # current subagent implementation
+├── deprecated-extensions/ # disabled implementations kept for reference
 ├── tests/                # extension tests and shared test helpers
 ├── prompts/              # prompt templates (.md) — package resource
 └── themes/               # themes (.json) — package resource
@@ -28,13 +29,16 @@ pi-stuff/
 **Single-file (`extensions/*.ts`):** confirm-destructive, custom-footer,
 custom-header, dynamic-tools, git-merge-and-resolve, handoff,
 hidden-thinking-label, inline-bash, interactive-shell, message-renderer,
-model-status, notify, permission-gate, prompt-customizer, protected-paths,
-qna, rainbow-editor, status-line, structured-output, summarize,
-titlebar-spinner, tools, truncated-tool, widget-placement,
+model-status, notify, permission-gate, protected-paths, qna, status-line,
+summarize, titlebar-spinner, tools, truncated-tool, widget-placement,
 working-indicator.
 
-**Directory:** `accounts`, `dynamic-resources`, `plan-mode`, `todo`,
-`subagent_deprecated`.
+**Directory:** `accounts`, `dynamic-resources`, `plan-mode`, `todo`, `subagent`.
+
+**Deprecated reference implementations:** `deprecated-extensions/` contains
+the prompt customizer, rainbow editor, structured output, former flat todo,
+and former subagent implementations. They are not matched by the package's
+active extension globs.
 
 ### Accounts
 
@@ -53,8 +57,8 @@ The extension is loaded automatically by the package's
 restoration, transient reminders, native result rendering, and a persistent
 plan widget. Its tests live under `tests/todo/`.
 
-The former flat sample extension is kept as `extensions/todo_deprecated.ts` and
-is explicitly excluded from the package manifest.
+The former flat sample extension is kept as
+`deprecated-extensions/todo_deprecated.ts` for reference.
 
 ## Prompts & themes
 
@@ -65,9 +69,9 @@ up. No copy to `~/.pi/agent` is needed; the package is the single source.
 ## Agents
 
 Agents are **not** a Pi package resource (no manifest key). The deprecated
-`subagent_deprecated` implementation keeps its role prompts in
-`extensions/subagent_deprecated/prompts/*.md` and is excluded from package
-loading while replacement work proceeds.
+The deprecated `subagent_deprecated` implementation keeps its role prompts in
+`deprecated-extensions/subagent_deprecated/prompts/*.md` and stays outside
+package loading while replacement work proceeds.
 
 ## Package resources & filtering
 

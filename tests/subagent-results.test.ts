@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import {
 	finalizeRun,
 	formatRunFailure,
-} from "../extensions/subagent_deprecated/results.js";
+} from "../deprecated-extensions/subagent_deprecated/results.js";
 
 const usage = {
 	input: 1,

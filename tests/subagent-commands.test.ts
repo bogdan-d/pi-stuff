@@ -18,12 +18,12 @@ import {
 	runAgentList,
 	runAgentOverride,
 	runAgentRemove,
-} from "../extensions/subagent_deprecated/commands.js";
+} from "../deprecated-extensions/subagent_deprecated/commands.js";
 import {
 	loadCustomAgentConfig,
 	writeCustomAgentConfig,
-} from "../extensions/subagent_deprecated/config.js";
-import { ROLES } from "../extensions/subagent_deprecated/roles.js";
+} from "../deprecated-extensions/subagent_deprecated/config.js";
+import { ROLES } from "../deprecated-extensions/subagent_deprecated/roles.js";
 
 const directories: string[] = [];
 

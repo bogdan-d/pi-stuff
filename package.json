@@ -27,12 +27,7 @@
 	"pi": {
 		"extensions": [
 			"extensions/*.ts",
-			"extensions/*/index.ts",
-			"!extensions/prompt-customizer.ts",
-			"!extensions/rainbow-editor.ts",
-			"!extensions/structured-output.ts",
-			"!extensions/subagent_deprecated/index.ts",
-			"!extensions/todo_deprecated.ts"
+			"extensions/*/index.ts"
 		],
 		"prompts": [
 			"prompts"
