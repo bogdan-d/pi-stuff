@@ -53,3 +53,8 @@ export function formatTokens(tokens: number): string {
 		return `${(tokens / 1_000).toFixed(tokens < 10_000 ? 1 : 0)}k tokens`;
 	return `${(tokens / 1_000_000).toFixed(tokens < 10_000_000 ? 1 : 0)}m tokens`;
 }
+
+/** Formats reported cost; zero may represent free or unpriced usage. */
+export function formatCost(cost: number): string {
+	return `$${cost.toFixed(4)}`;
+}

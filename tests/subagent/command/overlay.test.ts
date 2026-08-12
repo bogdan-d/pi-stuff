@@ -122,8 +122,28 @@ test("collection failures remain unjoined and are reported", async () => {
 });
 
 test("generation detail uses one-based chronology instead of opaque identities", () => {
-	const first = fakeGeneration({ generation: 1, prompt: "first task" });
-	const second = fakeGeneration({ generation: 2, prompt: "follow-up task" });
+	const first = fakeGeneration({
+		generation: 1,
+		prompt: "first task",
+		cost: {
+			input: 0.004,
+			output: 0.006,
+			cacheRead: 0,
+			cacheWrite: 0,
+			total: 0.01,
+		},
+	});
+	const second = fakeGeneration({
+		generation: 2,
+		prompt: "follow-up task",
+		cost: {
+			input: 0.008,
+			output: 0.012,
+			cacheRead: 0,
+			cacheWrite: 0,
+			total: 0.02,
+		},
+	});
 	const { component } = overlayFixture(
 		fakeAgent({ generations: [first, second] }),
 	);
@@ -134,6 +154,8 @@ test("generation detail uses one-based chronology instead of opaque identities",
 	expect(rendered).toContain("generation 2");
 	expect(rendered).toContain("Previous generations");
 	expect(rendered).toContain("generation #1");
+	expect(rendered).toContain("cost $0.0100");
+	expect(rendered).toContain("cost $0.0300 total");
 });
 
 test("nested chronology scopes generation numbers to their parent conversation", () => {
@@ -180,6 +202,26 @@ test("conversation browser always renders as a tree", () => {
 
 	component.handleInput("t");
 	expect(component.render(120).join("\n")).toContain("╰─ Child");
+});
+
+test("conversation rows keep descendant costs separate", () => {
+	const root = fakeAgent({
+		conversationId: "root",
+		label: "Root",
+		cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 },
+	});
+	const child = fakeAgent({
+		conversationId: "child",
+		parentConversationId: "root",
+		label: "Child",
+		cost: { input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.02 },
+	});
+	const { component } = overlayFixture(root, [child]);
+
+	const rendered = component.render(160).join("\n");
+	expect(rendered).toContain("cost $0.0100");
+	expect(rendered).toContain("cost $0.0200");
+	expect(rendered).not.toContain("cost $0.0300");
 });
 
 test.each([

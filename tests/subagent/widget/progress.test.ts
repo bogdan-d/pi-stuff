@@ -6,7 +6,7 @@ import {
 	formatProgressWidgetLines,
 	updateSubagentWidget,
 } from "../../../extensions/subagent/widget.js";
-import { fakeAgent } from "../helpers/fake-agent.js";
+import { fakeAgent, fakeGeneration } from "../helpers/fake-agent.js";
 import { renderWidgetContent } from "../helpers/render-widget.js";
 
 test("progress mode renders one active line and excludes settled conversations", () => {
@@ -32,7 +32,9 @@ test("progress mode renders one active line and excludes settled conversations",
 
 		expect(
 			renderWidgetContent(setWidget.mock.calls[0]![1], undefined, 120),
-		).toEqual(["● Investigate · scout · running 4.0s · starting…"]);
+		).toEqual([
+			"● Investigate · scout · running 4.0s · cost $0.0000 · starting…",
+		]);
 	} finally {
 		jest.useRealTimers();
 	}
@@ -49,7 +51,41 @@ test("progress mode falls back to the agent name and shows queued elapsed time",
 			],
 			7_000,
 		),
-	).toEqual(["○ planner · queued 5.0s · starting…"]);
+	).toEqual(["○ planner · queued 5.0s · cost $0.0000 · starting…"]);
+});
+
+test("progress mode shows cumulative conversation cost across generations", () => {
+	expect(
+		formatProgressWidgetLines(
+			[
+				fakeAgent({
+					generations: [
+						fakeGeneration({
+							cost: {
+								input: 0.01,
+								output: 0,
+								cacheRead: 0,
+								cacheWrite: 0,
+								total: 0.01,
+							},
+						}),
+						fakeGeneration({
+							generation: 2,
+							status: { kind: "running", startedAt: 1_000 },
+							cost: {
+								input: 0.02,
+								output: 0,
+								cacheRead: 0,
+								cacheWrite: 0,
+								total: 0.02,
+							},
+						}),
+					],
+				}),
+			],
+			5_000,
+		),
+	).toEqual(["● helper · running 4.0s · cost $0.0300 · starting…"]);
 });
 
 test("progress activity prefers the unfinished latest tool and its input", () => {
@@ -80,7 +116,7 @@ test("progress activity prefers the unfinished latest tool and its input", () =>
 			],
 			5_000,
 		),
-	).toEqual(["● helper · running 4.0s · read src/widget.ts"]);
+	).toEqual(["● helper · running 4.0s · cost $0.0000 · read src/widget.ts"]);
 });
 
 test("progress activity uses the current assistant message before completed tools", () => {
@@ -105,7 +141,7 @@ test("progress activity uses the current assistant message before completed tool
 			],
 			5_000,
 		),
-	).toEqual(["● helper · running 4.0s · Writing an answer"]);
+	).toEqual(["● helper · running 4.0s · cost $0.0000 · Writing an answer"]);
 });
 
 test("progress activity falls back to the most recently completed tool", () => {
@@ -136,7 +172,7 @@ test("progress activity falls back to the most recently completed tool", () => {
 			],
 			5_000,
 		),
-	).toEqual(["● helper · running 4.0s · grep TODO"]);
+	).toEqual(["● helper · running 4.0s · cost $0.0000 · grep TODO"]);
 });
 
 test("progress mode clears when no conversations are active", () => {
@@ -223,8 +259,8 @@ test("progress mode limits active rows and appends an overflow line", () => {
 		expect(
 			renderWidgetContent(setWidget.mock.calls[0]![1], undefined, 120),
 		).toEqual([
-			"● One · helper · running 1.0s · starting…",
-			"○ Two · helper · queued 1.0s · starting…",
+			"● One · helper · running 1.0s · cost $0.0000 · starting…",
+			"○ Two · helper · queued 1.0s · cost $0.0000 · starting…",
 			"+1 more",
 		]);
 	} finally {

@@ -10,7 +10,7 @@ import type {
 	ConversationUpdateKind,
 	GenerationSnapshot,
 } from "./conversation.js";
-import { formatElapsed } from "./generation-format.js";
+import { formatCost, formatElapsed } from "./generation-format.js";
 import {
 	DEFAULT_SUBAGENT_UI_SETTINGS,
 	type SubagentDisplaySettings,
@@ -74,7 +74,7 @@ export function formatProgressWidgetRow(
 		conversation,
 		generation,
 		status,
-		text: `${marker} ${identity}${agent} · ${status} ${formatElapsed(Math.max(0, now - timestamp))} · ${latestActivity(generation)}`,
+		text: `${marker} ${identity}${agent} · ${status} ${formatElapsed(Math.max(0, now - timestamp))} · cost ${formatCost(conversation.cost.total)} · ${latestActivity(generation)}`,
 	};
 }
 

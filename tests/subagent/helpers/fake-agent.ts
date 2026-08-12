@@ -58,6 +58,7 @@ export interface FakeGenerationOptions {
 	activeTools?: string[];
 	usage?: Usage;
 	totalUsage?: Usage;
+	cost?: Usage["cost"];
 	joined?: boolean;
 	observerCount?: number;
 	nestedJoins?: GenerationSnapshot["nestedJoins"];
@@ -121,6 +122,7 @@ export function fakeGeneration(
 		})) ??
 		[];
 	const generation = options.generation ?? 1;
+	const usage = options.totalUsage ?? options.usage ?? ZERO_USAGE;
 	return {
 		generation,
 		kind: options.kind ?? (generation === 1 ? "spawn" : "resume"),
@@ -138,7 +140,8 @@ export function fakeGeneration(
 			compactions: options.compactions ?? 0,
 			toolHistory: tools,
 		},
-		usage: options.totalUsage ?? options.usage ?? ZERO_USAGE,
+		cost: options.cost ?? usage.cost,
+		usage,
 		observerCount: options.observerCount ?? 0,
 		joined: options.joined ?? false,
 		nestedJoins: options.nestedJoins ?? [],
@@ -168,6 +171,16 @@ export function fakeAgent(
 		generated,
 	];
 	const latest = generations.at(-1)!;
+	const cost = generations.reduce<Usage["cost"]>(
+		(total, generation) => ({
+			input: total.input + generation.cost.input,
+			output: total.output + generation.cost.output,
+			cacheRead: total.cacheRead + generation.cost.cacheRead,
+			cacheWrite: total.cacheWrite + generation.cost.cacheWrite,
+			total: total.total + generation.cost.total,
+		}),
+		ZERO_USAGE.cost,
+	);
 	const isActive =
 		latest.status.kind === "queued" || latest.status.kind === "running";
 	if (isActive && options.resumeAllowed)
@@ -198,6 +211,7 @@ export function fakeAgent(
 			tools: config.tools,
 			skills: config.skills,
 		},
+		cost,
 		generations,
 		resumeAllowed: options.resumeAllowed ?? false,
 		...(isActive ? { currentGeneration: latest } : {}),

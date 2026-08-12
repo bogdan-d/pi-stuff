@@ -830,9 +830,10 @@ function projectInspection(
 				turns: total.turns + itemMetrics.turns,
 				compactions: total.compactions + itemMetrics.compactions,
 				tokens: total.tokens + itemMetrics.tokens,
+				cost: total.cost + itemMetrics.cost,
 			};
 		},
-		{ elapsedMs: 0, turns: 0, compactions: 0, tokens: 0 },
+		{ elapsedMs: 0, turns: 0, compactions: 0, tokens: 0, cost: 0 },
 	);
 	return {
 		...config,
@@ -880,6 +881,7 @@ function generationMetrics(
 		turns: generation.activity.turns,
 		compactions: generation.activity.compactions,
 		tokens: generation.usage.totalTokens ?? 0,
+		cost: generation.cost.total,
 	};
 }
 
@@ -939,6 +941,19 @@ function renderJoinedGenerations(
 			return {};
 		}
 	};
+	const conversationCost = (
+		conversationId: ConversationId,
+	): number | undefined => {
+		const local = conversations.find(
+			(item) => item.conversationId === conversationId,
+		);
+		if (local) return local.cost.total;
+		try {
+			return runtime.conversation(conversationId).cost.total;
+		} catch {
+			return undefined;
+		}
+	};
 	const status = (generation: GenerationSnapshot): SubagentStatus =>
 		projectSubagentStatus(generation.status);
 	const activity = (generation: GenerationSnapshot) =>
@@ -992,7 +1007,7 @@ function renderJoinedGenerations(
 		if (!generation) return base;
 		return {
 			...base,
-			...generationStats(generation),
+			...generationStats(generation, conversationCost(value.conversationId)),
 			activity: activity(generation),
 			joins: joins(generation),
 			background: background(value, base.label ?? base.agent),
@@ -1037,7 +1052,7 @@ function renderJoinedGenerations(
 			...info,
 			kind: generation.kind,
 			prompt: generation.prompt,
-			...generationStats(generation),
+			...generationStats(generation, conversationCost(value.conversationId)),
 			activity: activity(generation),
 			joins: joins(generation),
 			background: background(value, info.label ?? info.agent),
@@ -1048,11 +1063,13 @@ function renderJoinedGenerations(
 
 function generationStats(
 	generation: GenerationSnapshot,
-): Pick<JoinedGenerationRenderItem, "elapsedMs" | "turns" | "tokens"> {
+	cost = generation.cost.total,
+): Pick<JoinedGenerationRenderItem, "elapsedMs" | "turns" | "tokens" | "cost"> {
 	return {
 		elapsedMs: generationElapsedMs(generation),
 		turns: generation.activity.turns,
 		tokens: generation.usage.totalTokens ?? 0,
+		cost,
 	};
 }
 

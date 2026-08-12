@@ -52,6 +52,36 @@ const deps = (runtime: SubagentRuntime) => ({
 });
 const response = (result: any) => result.details.response;
 
+function emitReportedUsage(
+	listeners: ReadonlySet<(event: any) => void>,
+	cost: number,
+	totalTokens = 11,
+): void {
+	for (const listener of listeners)
+		listener({
+			type: "message_end",
+			message: {
+				role: "assistant",
+				content: [],
+				usage: {
+					input: totalTokens - 1,
+					output: 1,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens,
+					cost: {
+						input: cost,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						total: cost,
+					},
+				},
+				stopReason: "stop",
+			},
+		});
+}
+
 function joinLatest(runtime: SubagentRuntime, subagentId: any): void {
 	const binding = runtime.bindSubagentJoin([subagentId]);
 	binding.markJoined();
@@ -144,12 +174,14 @@ test("inspect separates current generation metrics from prior generation history
 			turns: 0,
 			compactions: 0,
 			tokens: 0,
+			cost: 0,
 		},
 		totalMetrics: {
 			elapsedMs: expect.any(Number),
 			turns: 0,
 			compactions: 0,
 			tokens: 0,
+			cost: 0,
 		},
 		history: [
 			{
@@ -161,6 +193,7 @@ test("inspect separates current generation metrics from prior generation history
 				turns: 0,
 				compactions: 0,
 				tokens: 0,
+				cost: 0,
 				steers: [{ id: 1, state: "discarded" }],
 			},
 		],
@@ -176,6 +209,54 @@ test("inspect separates current generation metrics from prior generation history
 	expect(totalElapsedMs).toBe(
 		Number(historyElapsedMs) + Number(currentElapsedMs),
 	);
+});
+
+test("inspect and join project cumulative resumed conversation cost", async () => {
+	const listeners = new Set<(event: any) => void>();
+	const retainedSession = {
+		messages: [],
+		subscribe(listener: (event: any) => void) {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		},
+		abort() {},
+	};
+	const runtime = new SubagentRuntime(
+		registry,
+		1,
+		async (_ctx, conversation, generation) => {
+			conversation.bindSession(generation, retainedSession);
+			emitReportedUsage(listeners, generation.number / 100);
+			return completedGeneration(conversation, generation, "done");
+		},
+	);
+	const first = runtime.startTasks(ctx, [
+		{ kind: "spawn", agent: "worker", prompt: "first", label: "cost" },
+	]);
+	const identity = first.starts[0] as any;
+	await first.completion;
+	joinLatest(runtime, identity.conversationId);
+	await runtime.startTasks(ctx, [
+		{ kind: "resume", subagentId: identity.conversationId, prompt: "second" },
+	]).completion;
+
+	const inspected = response(
+		inspectAction(deps(runtime), {
+			action: "inspect",
+			subagentIds: [identity.conversationId],
+		}),
+	).results[0];
+	expect(inspected.metrics.cost).toBe(0.02);
+	expect(inspected.history[0].cost).toBe(0.01);
+	expect(inspected.totalMetrics.cost).toBeCloseTo(0.03);
+
+	const joined = await joinAction(
+		deps(runtime),
+		{ action: "join", subagentIds: [identity.conversationId] },
+		undefined,
+		undefined,
+	);
+	expect((joined.details as any).view.entries[0].cost).toBeCloseTo(0.03);
 });
 
 test("cancelling a parent does not crash its in-flight nested join update", async () => {
@@ -448,6 +529,7 @@ test("final joins use null when terminal generations have no output", async () =
 
 test("running join updates omit output until the final result", async () => {
 	let finish!: () => void;
+	let emitUsage!: () => void;
 	const gate = new Promise<void>((done) => {
 		finish = done;
 	});
@@ -455,7 +537,16 @@ test("running join updates omit output until the final result", async () => {
 		registry,
 		1,
 		async (_ctx, conversation, generation) => {
-			conversation.bindSession(generation, session());
+			const listeners = new Set<(event: any) => void>();
+			conversation.bindSession(generation, {
+				messages: [],
+				subscribe(listener: (event: any) => void) {
+					listeners.add(listener);
+					return () => listeners.delete(listener);
+				},
+				abort() {},
+			});
+			emitUsage = () => emitReportedUsage(listeners, 0.0123, 12);
 			await gate;
 			return completedGeneration(conversation, generation, "done");
 		},
@@ -471,13 +562,19 @@ test("running join updates omit output until the final result", async () => {
 		deps(runtime),
 		{ action: "join", subagentIds: [identity.conversationId] },
 		undefined,
-		(update) => updates.push(response(update)),
+		(update) => updates.push(update),
 	);
-	expect(updates[0].results[0]).toMatchObject({
+	expect(response(updates[0]).results[0]).toMatchObject({
 		generation: 1,
 		status: "running",
 	});
-	expect(updates[0].results[0]).not.toHaveProperty("output");
+	expect(response(updates[0]).results[0]).not.toHaveProperty("output");
+
+	emitUsage();
+	expect(updates.at(-1)?.details.view.entries[0]).toMatchObject({
+		status: "running",
+		cost: 0.0123,
+	});
 
 	finish();
 	const final = response(await joining);

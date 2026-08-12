@@ -17,6 +17,7 @@ import {
 	type GenerationSnapshot,
 } from "../conversation.js";
 import {
+	formatCost,
 	formatElapsed,
 	formatTokens,
 	generationElapsedMs,
@@ -448,12 +449,13 @@ export class SubagentOverlayComponent implements Component, Focusable {
 			const tokens = generation
 				? formatTokens(generation.usage.totalTokens)
 				: "0 tokens";
+			const cost = `cost ${formatCost(conversation.cost.total)}`;
 			const timeline = generation ? generationRecency(generation) : "idle";
 			const activity = `${generation?.activity.turns ?? 0} ${plural(generation?.activity.turns ?? 0, "turn")} · ${generation?.activity.toolHistory.length ?? 0} ${plural(generation?.activity.toolHistory.length ?? 0, "tool")}`;
 			return [
 				truncateToWidth(`${firstPrefix}${title}`, width, "…"),
 				truncateToWidth(
-					`${continuationPrefix}${generation ? this.statusText(generation, status) : this.muted(status)} ${this.muted(`· ${elapsed} · ${tokens}`)}`,
+					`${continuationPrefix}${generation ? this.statusText(generation, status) : this.muted(status)} ${this.muted(`· ${elapsed} · ${tokens} · ${cost}`)}`,
 					width,
 					"…",
 				),
@@ -545,7 +547,7 @@ export class SubagentOverlayComponent implements Component, Focusable {
 					previous.status.outcome !== "completed"
 						? ` ${this.statusText(previous, `[${previous.status.outcome}]`)}`
 						: "";
-				const summary = `${label}${failure} ${this.muted(`· generation #${previous.generation} · ${activitySummary(previous)} · ${formatTokens(previous.usage.totalTokens)}`)}`;
+				const summary = `${label}${failure} ${this.muted(`· generation #${previous.generation} · ${activitySummary(previous)} · ${formatTokens(previous.usage.totalTokens)} · cost ${formatCost(previous.cost.total)}`)}`;
 				lines.push(
 					`  ${truncateToWidth(summary, Math.max(1, width - 2), "…")}`,
 				);
@@ -560,7 +562,7 @@ export class SubagentOverlayComponent implements Component, Focusable {
 			),
 			this.muted("│"),
 			`${this.statusAccent(generation, "●")} ${this.accent("Activity")}`,
-			`  ${this.muted(`${activitySummary(generation)} · ${formatElapsed(generationElapsedMs(generation))} · ${formatTokens(generation.usage.totalTokens)}`)}`,
+			`  ${this.muted(`${activitySummary(generation)} · ${formatElapsed(generationElapsedMs(generation))} · ${formatTokens(generation.usage.totalTokens)} · cost ${formatCost(conversation.cost.total)} total`)}`,
 		);
 		if (
 			generation.status.kind !== "done" &&
@@ -651,7 +653,7 @@ export class SubagentOverlayComponent implements Component, Focusable {
 					: "";
 				const status = effectiveStatus(child.generation.status);
 				const connector = `${prefix}${last ? "╰─" : "├─"}`;
-				const content = `${this.muted(connector)} ${this.text(label)}${this.muted(agent)} ${this.muted("·")} ${this.statusText(child.generation, status)}`;
+				const content = `${this.muted(connector)} ${this.text(label)}${this.muted(agent)} ${this.muted("·")} ${this.statusText(child.generation, status)} ${this.muted(`· cost ${formatCost(child.conversation.cost.total)}`)}`;
 				lines.push(truncateToWidth(content, width, "…"));
 				visit(
 					children.get(childKey) ?? [],

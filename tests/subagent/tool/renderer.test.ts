@@ -104,12 +104,19 @@ describe("subagent result renderer", () => {
 							label: "Worker",
 							status: "running",
 							generation: 1,
-							metrics: { elapsedMs: 2, turns: 1, compactions: 0, tokens: 3 },
+							metrics: {
+								elapsedMs: 2,
+								turns: 1,
+								compactions: 0,
+								tokens: 3,
+								cost: 0.0123,
+							},
 							totalMetrics: {
 								elapsedMs: 2,
 								turns: 1,
 								compactions: 0,
 								tokens: 3,
+								cost: 0.0123,
 							},
 							history: [],
 							recentTools: [],
@@ -119,7 +126,7 @@ describe("subagent result renderer", () => {
 				},
 			},
 			"Inspected 1 subagent",
-			"generation 1",
+			"cost \\$0\\.0123 total",
 		));
 
 	it("renders join", () =>
@@ -134,11 +141,12 @@ describe("subagent result renderer", () => {
 							label: "Worker",
 							status: "completed",
 							output: "done",
+							cost: 0.0123,
 						},
 					],
 				},
 			},
-			"Worker.*completed",
+			"Worker.*completed.*cost \\$0\\.0123",
 			"subagent airy-acorn",
 		));
 

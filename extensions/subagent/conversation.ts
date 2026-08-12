@@ -156,6 +156,9 @@ export interface GenerationSnapshot {
 	readonly createdAt: number;
 	readonly status: GenerationViewStatus;
 	readonly activity: GenerationActivitySnapshot;
+	/** Cumulative reported model cost for this generation. */
+	readonly cost: Usage["cost"];
+	/** Latest assistant-call usage, used for current context metrics. */
 	readonly usage: Usage;
 	readonly observerCount: number;
 	readonly joined: boolean;
@@ -170,6 +173,8 @@ export interface ConversationSnapshot {
 	readonly createdAt: number;
 	readonly agent: AgentDefinitionSummary;
 	readonly requestedConfig: RequestedExecutionConfig;
+	/** Cumulative reported model cost across this conversation's generations. */
+	readonly cost: Usage["cost"];
 	readonly generations: readonly GenerationSnapshot[];
 	readonly currentGeneration?: GenerationSnapshot;
 	readonly resumeAllowed: boolean;
@@ -690,8 +695,10 @@ export class Conversation {
 	): GenerationSnapshot {
 		this.requireGeneration(generation);
 		if (generation !== this.latestGeneration) return this.project(generation);
-		this.unsubscribe?.();
-		this.unsubscribe = undefined;
+		if (this.stopping?.generation !== generation) {
+			this.unsubscribe?.();
+			this.unsubscribe = undefined;
+		}
 		if (generation.settle(outcome, details)) this.listener(this, "status");
 		return this.project(generation);
 	}
@@ -736,6 +743,8 @@ export class Conversation {
 			!this.stopping.executionSettled
 		)
 			return;
+		this.unsubscribe?.();
+		this.unsubscribe = undefined;
 		this.stopping = undefined;
 		this.listener(this, "status");
 	}
@@ -791,6 +800,7 @@ export class Conversation {
 
 	snapshot(): ConversationSnapshot {
 		const generations = this.generationHistory;
+		const cost = sumCosts(generations.map((generation) => generation.cost));
 		const currentGeneration = this.hasCurrentGeneration
 			? generations.at(-1)
 			: undefined;
@@ -806,6 +816,7 @@ export class Conversation {
 			createdAt: this.createdAt,
 			agent: summarizeAgentDefinition(this.definition),
 			requestedConfig: this.requestedConfig,
+			cost,
 			generations,
 			...(currentGeneration ? { currentGeneration } : {}),
 			resumeAllowed: this.isResumeAllowed,
@@ -873,6 +884,7 @@ export class Conversation {
 			createdAt: generation.createdAt,
 			status: Object.freeze(status),
 			activity: Object.freeze(generation.activity.snapshot()),
+			cost: generation.activity.cost,
 			usage: generation.activity.usage,
 			observerCount: generation.observerCount,
 			joined: generation.joined,
@@ -880,4 +892,17 @@ export class Conversation {
 			steers: Object.freeze(generation.steers.map(projectSteer)),
 		});
 	}
+}
+
+function sumCosts(costs: readonly Usage["cost"][]): Usage["cost"] {
+	return costs.reduce<Usage["cost"]>(
+		(total, cost) => ({
+			input: total.input + cost.input,
+			output: total.output + cost.output,
+			cacheRead: total.cacheRead + cost.cacheRead,
+			cacheWrite: total.cacheWrite + cost.cacheWrite,
+			total: total.total + cost.total,
+		}),
+		{ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	);
 }

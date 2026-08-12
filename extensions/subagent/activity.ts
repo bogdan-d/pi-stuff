@@ -19,6 +19,14 @@ const DefaultUsage: Usage = {
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
+const DefaultCost: Usage["cost"] = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	total: 0,
+};
+
 export type GenerationActivityListener = (kind: ConversationUpdateKind) => void;
 
 export class GenerationActivity {
@@ -28,6 +36,7 @@ export class GenerationActivity {
 	private _toolHistory = new Array<GenerationToolUse>();
 	private _compactions: number = 0;
 	private _latestUsage: Usage = DefaultUsage;
+	private _cost: Usage["cost"] = DefaultCost;
 	private _nextSyntheticToolId = 0;
 
 	private readonly onChange: GenerationActivityListener;
@@ -51,6 +60,10 @@ export class GenerationActivity {
 		return this._latestUsage;
 	}
 
+	get cost(): Usage["cost"] {
+		return { ...this._cost };
+	}
+
 	snapshot(): GenerationActivitySnapshot {
 		return {
 			phase: this._phase,
@@ -67,13 +80,10 @@ export class GenerationActivity {
 			if (event.type === "agent_end")
 				this._setPhase(event.willRetry ? "thinking" : "settling");
 			else if (event.type === "turn_start") this._setPhase("thinking");
-			else if (
-				event.type === "compaction_end" &&
-				!event.aborted &&
-				event.result
-			) {
-				this._compactions += 1;
-				this.onChange("compaction");
+			else if (event.type === "compaction_end") {
+				if (event.result?.usage) this._addCost(event.result.usage);
+				if (!event.aborted && event.result) this._compactions += 1;
+				if (event.result) this.onChange("compaction");
 			} else if (event.type === "message_start") {
 				this._message = "";
 				if (phaseOverride) this._setPhase(phaseOverride);
@@ -83,11 +93,9 @@ export class GenerationActivity {
 				event.type === "message_end" &&
 				event.message.role === "assistant"
 			) {
-				// Each assistant message carries the usage for that single API call, where the
-				// input/cache fields already cover the whole conversation re-sent that call. Summing
-				// across calls would re-count the growing context every round, so we take the latest
-				// call's usage as the generation's current context size rather than accumulating.
+				// Context usage is latest-call state; cost is per-call spend and accumulates.
 				this._latestUsage = event.message.usage;
+				this._addCost(event.message.usage);
 				this.onChange("usage");
 			} else if (
 				event.type === "message_update" &&
@@ -112,6 +120,16 @@ export class GenerationActivity {
 				this.onChange("turn");
 			}
 		});
+	}
+
+	private _addCost(usage: Usage): void {
+		this._cost = {
+			input: this._cost.input + usage.cost.input,
+			output: this._cost.output + usage.cost.output,
+			cacheRead: this._cost.cacheRead + usage.cost.cacheRead,
+			cacheWrite: this._cost.cacheWrite + usage.cost.cacheWrite,
+			total: this._cost.total + usage.cost.total,
+		};
 	}
 
 	private _setPhase(phase: GenerationPhase): void {

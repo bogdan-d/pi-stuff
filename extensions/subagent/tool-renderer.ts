@@ -20,6 +20,7 @@ import {
 	type SteerReceipt,
 } from "./conversation.js";
 import {
+	formatCost,
 	formatElapsed,
 	formatTokens,
 	statusColor,
@@ -104,6 +105,7 @@ export interface GenerationMetricsRenderItem {
 	turns: number;
 	compactions: number;
 	tokens: number;
+	cost: number;
 }
 
 export interface GenerationHistoryRenderItem
@@ -157,6 +159,7 @@ export interface JoinTargetRenderItem {
 	elapsedMs?: number;
 	turns?: number;
 	tokens?: number;
+	cost?: number;
 	activity?: JoinActivityRenderItem[];
 	joins?: JoinInvocationRenderItem[];
 	background?: JoinBackgroundOwnerRenderItem[];
@@ -188,6 +191,7 @@ export interface JoinedGenerationRenderItem {
 	elapsedMs?: number;
 	turns?: number;
 	tokens?: number;
+	cost?: number;
 	activity?: JoinActivityRenderItem[];
 	joins?: JoinInvocationRenderItem[];
 	background?: JoinBackgroundOwnerRenderItem[];
@@ -476,9 +480,13 @@ function expandedLines(
 						`  ${paint(theme, "error", entry.error)}`,
 					];
 				const label = entry.label || entry.agent || entry.subagentId;
+				const reportedCost =
+					typeof entry.totalMetrics.cost === "number"
+						? ` · cost ${formatCost(entry.totalMetrics.cost)} total`
+						: "";
 				const lines = [
 					`${statusMarker(theme, entry.status)} ${paint(theme, "text", label)} ${paint(theme, "muted", "·")} ${statusText(theme, entry.status)}${entry.phase ? ` ${paint(theme, "muted", `· ${entry.phase.replaceAll("_", " ")}`)}` : ""}`,
-					`  ${tag(theme, "subagent", entry.subagentId)} ${paint(theme, "muted", `· generation ${entry.generation} · ${entry.metrics.turns} turns · ${entry.metrics.compactions} compactions · ${entry.metrics.elapsedMs}ms`)}`,
+					`  ${tag(theme, "subagent", entry.subagentId)} ${paint(theme, "muted", `· generation ${entry.generation} · ${entry.metrics.turns} turns · ${entry.metrics.compactions} compactions · ${entry.metrics.elapsedMs}ms${reportedCost}`)}`,
 				];
 				if (entry.messageSnippet)
 					lines.push(
@@ -787,7 +795,12 @@ function renderBackground(
 }
 
 function generationStats(
-	generation: { elapsedMs?: number; turns?: number; tokens?: number },
+	generation: {
+		elapsedMs?: number;
+		turns?: number;
+		tokens?: number;
+		cost?: number;
+	},
 	theme?: ThemeLike,
 ): string {
 	const parts = [
@@ -799,6 +812,9 @@ function generationStats(
 			: undefined,
 		generation.tokens !== undefined
 			? formatTokens(generation.tokens)
+			: undefined,
+		generation.cost !== undefined
+			? `cost ${formatCost(generation.cost)}`
 			: undefined,
 	].filter((part): part is string => part !== undefined);
 	return parts.length
