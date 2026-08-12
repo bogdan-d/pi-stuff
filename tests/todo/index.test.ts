@@ -20,12 +20,17 @@ type RegisteredTodoTool = {
 	renderResult: (...args: any[]) => any;
 	renderShell?: string;
 };
+type RegisteredTodoCommand = {
+	handler: (args: string, ctx: any) => Promise<void>;
+};
 
 function setupTodoTool(): {
 	tool: RegisteredTodoTool;
+	command: RegisteredTodoCommand;
 	handlers: Map<string, Handler>;
 } {
 	let tool: RegisteredTodoTool | undefined;
+	let command: RegisteredTodoCommand | undefined;
 	const handlers = new Map<string, Handler>();
 	registerTodoTool(
 		{
@@ -35,12 +40,17 @@ function setupTodoTool(): {
 			registerTool: vi.fn((registered: RegisteredTodoTool) => {
 				tool = registered;
 			}),
+			registerCommand: vi.fn(
+				(name: string, registered: RegisteredTodoCommand) => {
+					if (name === "todo") command = registered;
+				},
+			),
 		} as never,
 		async () => ({
 			settings: { ...DEFAULT_TODO_SETTINGS, ...settingsControl.loaded },
 		}),
 	);
-	return { tool: tool!, handlers };
+	return { tool: tool!, command: command!, handlers };
 }
 
 const executionContext = { hasUI: false };
@@ -132,8 +142,16 @@ describe("todoExtension", () => {
 	});
 
 	it("registers the todo tool and reminder lifecycle handlers", () => {
-		const pi = { on: vi.fn(), registerTool: vi.fn() };
+		const pi = {
+			on: vi.fn(),
+			registerCommand: vi.fn(),
+			registerTool: vi.fn(),
+		};
 		expect(() => todoExtension(pi as never)).not.toThrow();
+		expect(pi.registerCommand).toHaveBeenCalledWith(
+			"todo",
+			expect.objectContaining({ description: "Toggle todo list display" }),
+		);
 		expect(pi.registerTool).toHaveBeenCalledWith(
 			expect.objectContaining({
 				name: "todo",
@@ -156,6 +174,29 @@ describe("todoExtension", () => {
 			"session_before_compact",
 			expect.any(Function),
 		);
+	});
+
+	it("toggles the persistent todo list display", async () => {
+		const { command, handlers, tool } = setupTodoTool();
+		const setWidget = vi.fn();
+		const notify = vi.fn();
+		const context = {
+			...sessionContext(),
+			hasUI: true,
+			ui: { notify, setWidget },
+		};
+		await handlers.get("session_start")?.({}, context);
+		await setOpenPlan(tool);
+
+		await command.handler("", context);
+		expect(setWidget).toHaveBeenLastCalledWith("todo", undefined);
+		expect(notify).toHaveBeenLastCalledWith("Todo list hidden.", "info");
+
+		await command.handler("", context);
+		expect(setWidget).toHaveBeenLastCalledWith("todo", expect.any(Function), {
+			placement: "aboveEditor",
+		});
+		expect(notify).toHaveBeenLastCalledWith("Todo list shown.", "info");
 	});
 
 	it.each([

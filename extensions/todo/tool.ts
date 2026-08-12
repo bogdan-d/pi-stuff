@@ -188,6 +188,7 @@ export function registerTodoTool(
 ): void {
 	let state = createTodoState();
 	let settings: TodoSettings = { ...DEFAULT_TODO_SETTINGS };
+	let widgetVisible = true;
 	let reminderCadence = createReminderCadenceState();
 	let pendingCompactionContext: string | undefined;
 	let interactedWithTodoThisTurn = false;
@@ -197,11 +198,21 @@ export function registerTodoTool(
 	const invalidateLatestSetRenderer = (): void => {
 		latestSetRenderer?.invalidate?.();
 	};
+	const refreshWidget = (ctx: ExtensionContext): void => {
+		const placement =
+			settings.widgetPlacement === "off"
+				? "aboveEditor"
+				: settings.widgetPlacement;
+		updateTodoWidget(ctx, state, {
+			...settings,
+			widgetPlacement: widgetVisible ? placement : "off",
+		});
+	};
 
 	const restore = (ctx: ExtensionContext): void => {
 		state = restoreTodoState(ctx);
 		invalidateLatestSetRenderer();
-		updateTodoWidget(ctx, state, settings);
+		refreshWidget(ctx);
 	};
 
 	const resetReminderTracking = (): void => {
@@ -212,6 +223,7 @@ export function registerTodoTool(
 	pi.on("session_start", async (_event, ctx) => {
 		const loaded = await loadSettings(ctx);
 		settings = loaded.settings;
+		widgetVisible = settings.widgetPlacement !== "off";
 		if (loaded.warning) ctx.ui.notify(loaded.warning, "warning");
 		restore(ctx);
 		pendingCompactionContext = undefined;
@@ -231,10 +243,10 @@ export function registerTodoTool(
 		reminderCadence = beginReminderAgentRun(reminderCadence);
 	});
 	pi.on("agent_start", (_event, ctx) => {
-		updateTodoWidget(ctx, state, settings);
+		refreshWidget(ctx);
 	});
 	pi.on("agent_settled", (_event, ctx) => {
-		updateTodoWidget(ctx, state, settings);
+		refreshWidget(ctx);
 	});
 	pi.on("turn_end", (event) => {
 		reminderCadence = interactedWithTodoThisTurn
@@ -279,6 +291,15 @@ export function registerTodoTool(
 		};
 	});
 
+	pi.registerCommand("todo", {
+		description: "Toggle todo list display",
+		handler: async (_args, ctx) => {
+			widgetVisible = !widgetVisible;
+			refreshWidget(ctx);
+			ctx.ui.notify(`Todo list ${widgetVisible ? "shown" : "hidden"}.`, "info");
+		},
+	});
+
 	pi.registerTool({
 		name: "todo",
 		label: "Todo",
@@ -318,7 +339,7 @@ export function registerTodoTool(
 					state = next;
 					invalidateLatestSetRenderer();
 				}
-				updateTodoWidget(ctx, state, settings);
+				refreshWidget(ctx);
 				interactedWithTodoThisTurn = true;
 				return {
 					content: [
