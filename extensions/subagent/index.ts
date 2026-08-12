@@ -12,6 +12,7 @@ import {
 	type ConversationUpdateKind,
 	generationKey,
 } from "./conversation.js";
+import { registerSubagentCostStatusLifecycle } from "./footer.js";
 import { generationElapsedMs } from "./generation-format.js";
 import {
 	type CompletionNotificationMessageDetails,
@@ -70,6 +71,7 @@ export default function subagentExtension(
 	let currentSettings: SubagentSettings = DEFAULT_SUBAGENT_SETTINGS;
 	const getCurrentSettings = () => currentSettings;
 	registerSubagentWidgetLifecycle(pi, runtime, getCurrentSettings);
+	registerSubagentCostStatusLifecycle(pi, runtime);
 
 	const completionNotifier = new CompletionNotifier({
 		pi: pi as any,

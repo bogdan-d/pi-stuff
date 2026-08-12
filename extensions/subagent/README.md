@@ -89,6 +89,8 @@ The widget defaults to summary mode. Progress mode shows queued/running rows up 
 
 Cost displays show reported model cost, accumulated across every generation in the retained conversation. Descendant conversations remain separate. `$0.0000` means reported cost was zero, which may indicate either free usage or unavailable pricing.
 
+After the first subagent starts, Pi's default footer shows `subs $0.0000`. This session total increases with every conversation, including nested conversations, and does not decrease when retained conversations are removed.
+
 ## Notifications
 
 Pi notifies you when delegated work finishes unless the result has already been observed or collected. Model-initiated generations also report completion directly to the model. Generations started or resumed by the user in `/subagents` do not wake the model; instead, Pi adds a compact shared-workspace activity notice to the model's next natural turn. If the model steers that work, it subscribes to the eventual completion. Listing and inspecting remain read-only and do not subscribe the model. Cancelling work also suppresses a redundant completion notification.
