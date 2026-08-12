@@ -420,5 +420,14 @@ describe("todo state", () => {
 				phases: [],
 			}),
 		).toThrow(/does not accept field: phases/);
+		expect(() =>
+			transitionTodoState(createTodoState(), {
+				action: "set",
+				phases: [
+					{ name: "Build", tasks: [describedTask("Implement feature")] },
+				],
+				workingOn: "Implementing the feature",
+			}),
+		).toThrow(/set does not accept field: workingOn/);
 	});
 });

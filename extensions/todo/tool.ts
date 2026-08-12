@@ -285,8 +285,8 @@ export function registerTodoTool(
 		description: [
 			"Maintain a phased task plan for complex work with 3+ distinct steps.",
 			"Actions:",
-			"  set(phases): Replace the entire plan; all tasks start `pending`.",
-			"  add(phases): Add described tasks; preserve existing tasks and statuses.",
+			"  set(phases): Replace the entire plan; all tasks start `pending`. Do not pass `workingOn`.",
+			"  add(phases): Add described tasks; preserve existing tasks and statuses. Do not pass `workingOn`.",
 			"  transition(transitions, workingOn?): Set statuses and current work by exact phase and task names.",
 			"  view(): Return the full plan with task descriptions.",
 		].join("\n"),

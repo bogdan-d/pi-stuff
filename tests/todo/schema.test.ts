@@ -4,9 +4,18 @@ import { TodoParamsSchema } from "../../extensions/todo/schema.js";
 import { describedTask } from "./helpers.js";
 
 describe("TodoParamsSchema", () => {
-	it("uses one strict flat provider-compatible object", () => {
+	it("serializes as a provider-compatible root object", () => {
 		expect(TodoParamsSchema.type).toBe("object");
-		expect("anyOf" in TodoParamsSchema).toBe(false);
+		expect(Object.keys(TodoParamsSchema.properties)).toEqual([
+			"action",
+			"phases",
+			"transitions",
+			"workingOn",
+		]);
+		expect(TodoParamsSchema).not.toHaveProperty("anyOf");
+	});
+
+	it("accepts each action's fields", () => {
 		expect(
 			Check(TodoParamsSchema, {
 				action: "set",

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "bun:test";
 import todoExtension from "../../extensions/todo/index.js";
+import { TodoParamsSchema } from "../../extensions/todo/schema.js";
 import {
 	DEFAULT_TODO_SETTINGS,
 	type TodoSettings,
@@ -136,7 +137,7 @@ describe("todoExtension", () => {
 		expect(pi.registerTool).toHaveBeenCalledWith(
 			expect.objectContaining({
 				name: "todo",
-				parameters: expect.objectContaining({ type: "object" }),
+				parameters: TodoParamsSchema,
 			}),
 		);
 		for (const event of [

@@ -34,16 +34,27 @@ export const TodoTransitionSchema = Type.Object(
 	{ additionalProperties: false },
 );
 
-/** Flat provider-facing schema. Action-specific requirements are enforced by the transition. */
+/** Root object shape is required by providers that read tool properties directly. */
 export const TodoParamsSchema = Type.Object(
 	{
 		action: StringEnum(TODO_ACTIONS),
-		phases: Type.Optional(Type.Array(TodoPhaseSchema, { minItems: 1 })),
+		phases: Type.Optional(
+			Type.Array(TodoPhaseSchema, {
+				minItems: 1,
+				description: "Required for set and add; invalid for other actions.",
+			}),
+		),
 		transitions: Type.Optional(
-			Type.Array(TodoTransitionSchema, { minItems: 1 }),
+			Type.Array(TodoTransitionSchema, {
+				minItems: 1,
+				description: "Required for transition; invalid for other actions.",
+			}),
 		),
 		workingOn: Type.Optional(
-			Type.String({ description: "Concise summary of the current work." }),
+			Type.String({
+				description:
+					"Concise summary of the current work; only valid for the transition action.",
+			}),
 		),
 	},
 	{ additionalProperties: false },
