@@ -164,6 +164,12 @@ describe("todoExtension", () => {
 			"todo",
 			expect.objectContaining({ description: "Toggle todo list display" }),
 		);
+		expect(pi.registerCommand).toHaveBeenCalledWith(
+			"todo-settings",
+			expect.objectContaining({
+				description: "Configure todo display and reminders",
+			}),
+		);
 		expect(pi.registerShortcut).toHaveBeenCalledWith(
 			Key.ctrlAlt("o"),
 			expect.objectContaining({ description: "Toggle todo list display" }),

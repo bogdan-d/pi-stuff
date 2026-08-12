@@ -24,8 +24,10 @@ import { TodoParamsSchema } from "./schema.js";
 import {
 	DEFAULT_TODO_SETTINGS,
 	loadTodoSettings,
+	saveTodoGlobalSettings,
 	type TodoSettings,
 } from "./settings.js";
+import { registerTodoSettingsCommand } from "./settings-command.js";
 import {
 	createTodoState,
 	todoAddressKey,
@@ -185,6 +187,7 @@ class LiveSetResult implements Component {
 export function registerTodoTool(
 	pi: ExtensionAPI,
 	loadSettings: typeof loadTodoSettings = loadTodoSettings,
+	saveSettings: typeof saveTodoGlobalSettings = saveTodoGlobalSettings,
 ): void {
 	let state = createTodoState();
 	let settings: TodoSettings = { ...DEFAULT_TODO_SETTINGS };
@@ -230,6 +233,16 @@ export function registerTodoTool(
 	const resetReminderTracking = (): void => {
 		reminderCadence = createReminderCadenceState();
 		interactedWithTodoThisTurn = false;
+	};
+	const applySettings = (next: TodoSettings, ctx: ExtensionContext): void => {
+		const wasEnabled = widgetEnabled;
+		settings = next;
+		widgetEnabled = settings.widgetPlacement !== "off";
+		if (!widgetEnabled) listVisible = false;
+		else if (!wasEnabled) listVisible = true;
+		invalidateLatestSetRenderer();
+		resetReminderTracking();
+		refreshWidget(ctx);
 	};
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -302,6 +315,16 @@ export function registerTodoTool(
 				{ role: "user", content: reminder, timestamp: Date.now() },
 			],
 		};
+	});
+
+	registerTodoSettingsCommand(pi, {
+		load: () => loadSettings(),
+		save: saveSettings,
+		onSaved: async (_globalSettings, ctx) => {
+			const loaded = await loadSettings(ctx);
+			if (loaded.warning) ctx.ui.notify(loaded.warning, "warning");
+			applySettings(loaded.settings, ctx);
+		},
 	});
 
 	pi.registerCommand("todo", {

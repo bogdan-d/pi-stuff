@@ -35,6 +35,9 @@ current-work line remains visible while the list is hidden.
 Global settings are read from `~/.pi/agent/todo/settings.json`. For trusted
 projects, `.pi/todo/settings.json` overrides global values.
 
+Use `/todo-settings` in TUI mode to edit global settings. Trusted project
+overrides still take precedence and remain file-configured.
+
 ```json
 {
   "widgetPlacement": "aboveEditor",

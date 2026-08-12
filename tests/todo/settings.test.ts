@@ -1,6 +1,6 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,7 @@ import {
 	DEFAULT_TODO_SETTINGS,
 	loadTodoSettings,
 	normalizeTodoSettings,
+	saveTodoGlobalSettings,
 } from "../../extensions/todo/settings.js";
 
 test("todo UI settings use defaults when no settings file exists", async () => {
@@ -29,6 +30,18 @@ test("todo UI settings use defaults when no settings file exists", async () => {
 		reminderMaxPerRun: 2,
 	});
 	assert.equal(result.warning, undefined);
+});
+
+test("todo settings persist as formatted JSON", async () => {
+	const root = await mkdtemp(join(tmpdir(), "todo-settings-save-"));
+	const path = join(root, "nested", "settings.json");
+
+	await saveTodoGlobalSettings(DEFAULT_TODO_SETTINGS, path);
+
+	assert.equal(
+		await readFile(path, "utf8"),
+		`${JSON.stringify(DEFAULT_TODO_SETTINGS, null, 2)}\n`,
+	);
 });
 
 test("todo UI settings validate each field independently", () => {

@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
 
@@ -86,6 +86,14 @@ export async function loadTodoSettings(
 	}
 
 	return loadResult(settings, warnings);
+}
+
+export async function saveTodoGlobalSettings(
+	settings: TodoSettings,
+	path = getTodoGlobalSettingsPath(),
+): Promise<void> {
+	await mkdir(dirname(path), { recursive: true });
+	await writeFile(path, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 }
 
 export function normalizeTodoSettings(value: unknown): TodoSettingsLoadResult {
