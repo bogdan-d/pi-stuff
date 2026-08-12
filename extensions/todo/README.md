@@ -27,7 +27,7 @@ The model-facing tool supports four actions:
 - `transition(transitions, workingOn?)` updates tasks by phase and task name.
 - `view()` returns the complete plan, including descriptions.
 
-Use `/todo` to hide or show the persistent todo list.
+Use `/todo` or `Ctrl+Alt+O` to hide or show the persistent todo list.
 
 ## Settings
 

@@ -2,7 +2,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, Text } from "@earendil-works/pi-tui";
+import { type Component, Container, Key, Text } from "@earendil-works/pi-tui";
 import {
 	formatTodoCompactionContext,
 	formatTodoSize,
@@ -208,6 +208,11 @@ export function registerTodoTool(
 			widgetPlacement: widgetVisible ? placement : "off",
 		});
 	};
+	const toggleWidget = (ctx: ExtensionContext): void => {
+		widgetVisible = !widgetVisible;
+		refreshWidget(ctx);
+		ctx.ui.notify(`Todo list ${widgetVisible ? "shown" : "hidden"}.`, "info");
+	};
 
 	const restore = (ctx: ExtensionContext): void => {
 		state = restoreTodoState(ctx);
@@ -293,11 +298,11 @@ export function registerTodoTool(
 
 	pi.registerCommand("todo", {
 		description: "Toggle todo list display",
-		handler: async (_args, ctx) => {
-			widgetVisible = !widgetVisible;
-			refreshWidget(ctx);
-			ctx.ui.notify(`Todo list ${widgetVisible ? "shown" : "hidden"}.`, "info");
-		},
+		handler: async (_args, ctx) => toggleWidget(ctx),
+	});
+	pi.registerShortcut(Key.ctrlAlt("o"), {
+		description: "Toggle todo list display",
+		handler: async (ctx) => toggleWidget(ctx),
 	});
 
 	pi.registerTool({

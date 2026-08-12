@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "bun:test";
+import { Key } from "@earendil-works/pi-tui";
 import todoExtension from "../../extensions/todo/index.js";
 import { TodoParamsSchema } from "../../extensions/todo/schema.js";
 import {
@@ -23,14 +24,19 @@ type RegisteredTodoTool = {
 type RegisteredTodoCommand = {
 	handler: (args: string, ctx: any) => Promise<void>;
 };
+type RegisteredTodoShortcut = {
+	handler: (ctx: any) => Promise<void>;
+};
 
 function setupTodoTool(): {
 	tool: RegisteredTodoTool;
 	command: RegisteredTodoCommand;
+	shortcut: RegisteredTodoShortcut;
 	handlers: Map<string, Handler>;
 } {
 	let tool: RegisteredTodoTool | undefined;
 	let command: RegisteredTodoCommand | undefined;
+	let shortcut: RegisteredTodoShortcut | undefined;
 	const handlers = new Map<string, Handler>();
 	registerTodoTool(
 		{
@@ -45,12 +51,17 @@ function setupTodoTool(): {
 					if (name === "todo") command = registered;
 				},
 			),
+			registerShortcut: vi.fn(
+				(key: string, registered: RegisteredTodoShortcut) => {
+					if (key === Key.ctrlAlt("o")) shortcut = registered;
+				},
+			),
 		} as never,
 		async () => ({
 			settings: { ...DEFAULT_TODO_SETTINGS, ...settingsControl.loaded },
 		}),
 	);
-	return { tool: tool!, command: command!, handlers };
+	return { tool: tool!, command: command!, shortcut: shortcut!, handlers };
 }
 
 const executionContext = { hasUI: false };
@@ -145,11 +156,16 @@ describe("todoExtension", () => {
 		const pi = {
 			on: vi.fn(),
 			registerCommand: vi.fn(),
+			registerShortcut: vi.fn(),
 			registerTool: vi.fn(),
 		};
 		expect(() => todoExtension(pi as never)).not.toThrow();
 		expect(pi.registerCommand).toHaveBeenCalledWith(
 			"todo",
+			expect.objectContaining({ description: "Toggle todo list display" }),
+		);
+		expect(pi.registerShortcut).toHaveBeenCalledWith(
+			Key.ctrlAlt("o"),
 			expect.objectContaining({ description: "Toggle todo list display" }),
 		);
 		expect(pi.registerTool).toHaveBeenCalledWith(
@@ -177,7 +193,7 @@ describe("todoExtension", () => {
 	});
 
 	it("toggles the persistent todo list display", async () => {
-		const { command, handlers, tool } = setupTodoTool();
+		const { command, handlers, shortcut, tool } = setupTodoTool();
 		const setWidget = vi.fn();
 		const notify = vi.fn();
 		const context = {
@@ -188,7 +204,7 @@ describe("todoExtension", () => {
 		await handlers.get("session_start")?.({}, context);
 		await setOpenPlan(tool);
 
-		await command.handler("", context);
+		await shortcut.handler(context);
 		expect(setWidget).toHaveBeenLastCalledWith("todo", undefined);
 		expect(notify).toHaveBeenLastCalledWith("Todo list hidden.", "info");
 
