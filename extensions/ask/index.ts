@@ -39,6 +39,7 @@ import {
 	DEFAULT_ASK_SETTINGS,
 	loadAskSettings,
 } from "./settings.js";
+import { registerAskSettingsCommand } from "./settings-command.js";
 
 type AskRendererState = {
 	callComponent?: Text;
@@ -136,7 +137,7 @@ function wrapAnsweredRow(
 }
 
 interface AskExtensionDependencies {
-	settingsStore?: Pick<AskSettingsStore, "load">;
+	settingsStore?: Pick<AskSettingsStore, "load" | "save">;
 }
 
 export default function askExtension(
@@ -144,6 +145,7 @@ export default function askExtension(
 	dependencies: AskExtensionDependencies = {},
 ) {
 	const settingsStore = dependencies.settingsStore ?? new AskSettingsStore();
+	registerAskSettingsCommand(pi, settingsStore);
 	let replayState: AskReplayState = { status: "idle" };
 	const revisedAnswers = new Map<string, AskAnswer>();
 	const rendererStates = new Map<string, AskRendererState>();

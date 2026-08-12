@@ -24,6 +24,7 @@ function register(initialActiveTools: string[] = []) {
 	let tool: any;
 	let activeTools = [...initialActiveTools];
 	const handlers = new Map<string, any>();
+	const commands = new Map<string, any>();
 	const emit = mock();
 	const sendMessage = mock();
 	const getActiveTools = mock(() => activeTools);
@@ -33,8 +34,12 @@ function register(initialActiveTools: string[] = []) {
 	const loadSettings = mock(async () => ({
 		settings: { ...configuredSettings },
 	}));
+	const saveSettings = mock(async () => {});
 	askExtension(
 		{
+			registerCommand: (name: string, command: unknown) => {
+				commands.set(name, command);
+			},
 			registerTool: (definition: unknown) => {
 				tool = definition;
 			},
@@ -46,13 +51,14 @@ function register(initialActiveTools: string[] = []) {
 			},
 			events: { emit },
 		} as never,
-		{ settingsStore: { load: loadSettings } },
+		{ settingsStore: { load: loadSettings, save: saveSettings } },
 	);
 	const contextHandler = handlers.get("context");
 	if (!tool || !contextHandler)
 		throw new Error("ask integration was not registered");
 	return {
 		tool,
+		commands,
 		contextHandler,
 		handlers,
 		emit,
@@ -60,6 +66,7 @@ function register(initialActiveTools: string[] = []) {
 		getActiveTools,
 		setActiveTools,
 		loadSettings,
+		saveSettings,
 	};
 }
 
@@ -96,9 +103,12 @@ function pendingTui() {
 
 describe("ask extension integration", () => {
 	it("registers session-start and before-agent-start hooks", () => {
-		const { handlers } = register();
+		const { commands, handlers } = register();
 		expect(handlers.get("session_start")).toBeTypeOf("function");
 		expect(handlers.get("before_agent_start")).toBeTypeOf("function");
+		expect(commands.get("ask-settings")?.description).toBe(
+			"Configure ask timeouts",
+		);
 	});
 
 	it("deactivates ask at no-UI session start while preserving siblings", () => {

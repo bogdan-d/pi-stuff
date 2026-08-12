@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export const MAX_TIMEOUT_MS = 2_147_483_647;
@@ -48,6 +48,15 @@ export class AskSettingsStore {
 				warning: `Invalid ask settings at ${this.settingsPath}; using defaults.`,
 			};
 		}
+	}
+
+	async save(settings: AskSettings): Promise<void> {
+		await mkdir(dirname(this.settingsPath), { recursive: true });
+		await writeFile(
+			this.settingsPath,
+			`${JSON.stringify(settings, null, 2)}\n`,
+			"utf8",
+		);
 	}
 }
 

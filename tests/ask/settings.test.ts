@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -60,6 +60,18 @@ describe("ask settings", () => {
 		await expect(store.load()).resolves.toEqual({
 			settings: { timeoutMs: 900, timeoutOnInput: "reset" },
 		});
+	});
+
+	it("creates its directory and persists formatted settings", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ask-settings-"));
+		const path = join(root, "nested", "settings.json");
+		const store = new AskSettingsStore(path);
+
+		await store.save({ timeoutMs: 12_000, timeoutOnInput: "cancel" });
+
+		expect(await readFile(path, "utf8")).toBe(
+			'{\n  "timeoutMs": 12000,\n  "timeoutOnInput": "cancel"\n}\n',
+		);
 	});
 
 	it("notifies when loading fails and returns defaults", async () => {
