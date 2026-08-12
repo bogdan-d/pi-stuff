@@ -188,7 +188,8 @@ export function registerTodoTool(
 ): void {
 	let state = createTodoState();
 	let settings: TodoSettings = { ...DEFAULT_TODO_SETTINGS };
-	let widgetVisible = true;
+	let widgetEnabled = true;
+	let listVisible = true;
 	let reminderCadence = createReminderCadenceState();
 	let pendingCompactionContext: string | undefined;
 	let interactedWithTodoThisTurn = false;
@@ -205,13 +206,19 @@ export function registerTodoTool(
 				: settings.widgetPlacement;
 		updateTodoWidget(ctx, state, {
 			...settings,
-			widgetPlacement: widgetVisible ? placement : "off",
+			widgetPlacement: widgetEnabled ? placement : "off",
+			showList: listVisible,
 		});
 	};
 	const toggleWidget = (ctx: ExtensionContext): void => {
-		widgetVisible = !widgetVisible;
+		if (!widgetEnabled) {
+			widgetEnabled = true;
+			listVisible = true;
+		} else {
+			listVisible = !listVisible;
+		}
 		refreshWidget(ctx);
-		ctx.ui.notify(`Todo list ${widgetVisible ? "shown" : "hidden"}.`, "info");
+		ctx.ui.notify(`Todo list ${listVisible ? "shown" : "hidden"}.`, "info");
 	};
 
 	const restore = (ctx: ExtensionContext): void => {
@@ -228,7 +235,8 @@ export function registerTodoTool(
 	pi.on("session_start", async (_event, ctx) => {
 		const loaded = await loadSettings(ctx);
 		settings = loaded.settings;
-		widgetVisible = settings.widgetPlacement !== "off";
+		widgetEnabled = settings.widgetPlacement !== "off";
+		listVisible = widgetEnabled;
 		if (loaded.warning) ctx.ui.notify(loaded.warning, "warning");
 		restore(ctx);
 		pendingCompactionContext = undefined;

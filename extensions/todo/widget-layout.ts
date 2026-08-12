@@ -20,6 +20,7 @@ export type TodoWidgetLayoutOptions = {
 	maxVisible?: number;
 	fallbackGlyphs?: boolean;
 	workingMarker?: string;
+	showList?: boolean;
 };
 
 type ThemeLike = Partial<Pick<Theme, "bold" | "fg" | "strikethrough">>;
@@ -35,44 +36,53 @@ export function renderTodoWidgetLines(
 ): string[] {
 	const safeWidth = Math.max(1, Math.floor(width) || 1);
 	const phases = state?.phases ?? [];
-	const selectedPhaseIndex = selectedTodoPhaseIndex(phases);
-	if (selectedPhaseIndex < 0) return [];
-	const selectedPhase = phases[selectedPhaseIndex];
-	if (!selectedPhase) return [];
-	const maxVisible = boundedMaxVisible(options.maxVisible);
-	const selectedTasks = visibleTasks(selectedPhase.tasks, maxVisible);
-	const lines: string[] = [fit(toolTitle("Todos", theme), safeWidth)];
+	const lines: string[] = [];
 
-	for (let phaseIndex = 0; phaseIndex < phases.length; phaseIndex++) {
-		const phase = phases[phaseIndex];
-		if (!phase) continue;
-		const selected = phaseIndex === selectedPhaseIndex;
-		lines.push(
-			fit(renderTodoPhaseTitle(phase, phaseIndex, selected, theme), safeWidth),
-		);
+	if (options.showList !== false) {
+		const selectedPhaseIndex = selectedTodoPhaseIndex(phases);
+		const selectedPhase = phases[selectedPhaseIndex];
+		if (selectedPhase) {
+			const maxVisible = boundedMaxVisible(options.maxVisible);
+			const selectedTasks = visibleTasks(selectedPhase.tasks, maxVisible);
+			lines.push(fit(toolTitle("Todos", theme), safeWidth));
 
-		if (selected) {
-			for (const task of selectedTasks) {
+			for (let phaseIndex = 0; phaseIndex < phases.length; phaseIndex++) {
+				const phase = phases[phaseIndex];
+				if (!phase) continue;
+				const selected = phaseIndex === selectedPhaseIndex;
 				lines.push(
 					fit(
-						renderTodoTaskLine(task, theme, options.fallbackGlyphs),
+						renderTodoPhaseTitle(phase, phaseIndex, selected, theme),
 						safeWidth,
 					),
 				);
-			}
-			const openTasks = phase.tasks.filter((task) => !isTerminalTodo(task));
-			const hidden = openTasks.length - selectedTasks.length;
-			if (hidden > 0) lines.push(fit(`    +${hidden} more`, safeWidth));
-			const terminalSummary = terminalTaskSummary(phase.tasks);
-			if (terminalSummary) {
-				const line = `    + ${terminalSummary}`;
-				lines.push(fit(theme?.fg ? theme.fg("muted", line) : line, safeWidth));
+
+				if (selected) {
+					for (const task of selectedTasks) {
+						lines.push(
+							fit(
+								renderTodoTaskLine(task, theme, options.fallbackGlyphs),
+								safeWidth,
+							),
+						);
+					}
+					const openTasks = phase.tasks.filter((task) => !isTerminalTodo(task));
+					const hidden = openTasks.length - selectedTasks.length;
+					if (hidden > 0) lines.push(fit(`    +${hidden} more`, safeWidth));
+					const terminalSummary = terminalTaskSummary(phase.tasks);
+					if (terminalSummary) {
+						const line = `    + ${terminalSummary}`;
+						lines.push(
+							fit(theme?.fg ? theme.fg("muted", line) : line, safeWidth),
+						);
+					}
+				}
 			}
 		}
 	}
 
 	if (state?.workingOn) {
-		lines.push("");
+		if (lines.length > 0) lines.push("");
 		const working = `${options.workingMarker ?? WORKING_SPINNER_FRAMES[0]} ${state.workingOn}`;
 		const text = theme?.fg ? theme.fg("muted", working) : working;
 		lines.push(fit(`  ${text}`, safeWidth));

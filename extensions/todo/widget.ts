@@ -7,7 +7,7 @@ import { TodoWidgetComponent } from "./widget-component.js";
 
 export type TodoWidgetSettings = Partial<
 	Pick<TodoSettings, "widgetPlacement" | "maxVisibleTasks" | "fallbackGlyphs">
->;
+> & { showList?: boolean };
 
 type WidgetComponentFactory = (
 	tui: TUI,
@@ -71,7 +71,12 @@ export function updateTodoWidget(
 			hasTasks &&
 			!hasOpenTasks &&
 			(lifecycle.hadOpenTasks || lifecycle.terminalClearTimer !== undefined);
-		const visibleState = hasOpenTasks || showFinalState ? state : undefined;
+		const showList = settings.showList !== false;
+		const visibleState =
+			(showList && (hasOpenTasks || showFinalState)) ||
+			(!showList && state?.workingOn)
+				? state
+				: undefined;
 		const factory: WidgetComponentFactory | undefined = visibleState
 			? (tui, theme) =>
 					new TodoWidgetComponent(
@@ -84,6 +89,7 @@ export function updateTodoWidget(
 							...(settings.fallbackGlyphs === undefined
 								? {}
 								: { fallbackGlyphs: settings.fallbackGlyphs }),
+							showList,
 							blankLineBelow: placement === "aboveEditor",
 							animateWorkingMarker: ctx.isIdle ? !ctx.isIdle() : true,
 						},

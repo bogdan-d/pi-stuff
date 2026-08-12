@@ -203,15 +203,48 @@ describe("todoExtension", () => {
 		};
 		await handlers.get("session_start")?.({}, context);
 		await setOpenPlan(tool);
+		await tool.execute(
+			"start",
+			{
+				action: "transition",
+				transitions: [
+					{
+						phase: "Build",
+						task: "Implement feature",
+						status: "in_progress",
+					},
+				],
+				workingOn: "Implementing the todo display toggle",
+			},
+			undefined,
+			undefined,
+			executionContext,
+		);
 
 		await shortcut.handler(context);
-		expect(setWidget).toHaveBeenLastCalledWith("todo", undefined);
+		const hiddenFactory = setWidget.mock.lastCall?.[1] as (
+			tui: never,
+			theme: never,
+		) => { render(width: number): string[] };
+		const hidden = hiddenFactory(undefined as never, undefined as never)
+			.render(80)
+			.join("\n");
+		expect(hidden).toContain("Implementing the todo display toggle");
+		expect(hidden).not.toContain("Todos");
+		expect(hidden).not.toContain("Implement feature");
 		expect(notify).toHaveBeenLastCalledWith("Todo list hidden.", "info");
 
 		await command.handler("", context);
 		expect(setWidget).toHaveBeenLastCalledWith("todo", expect.any(Function), {
 			placement: "aboveEditor",
 		});
+		const shownFactory = setWidget.mock.lastCall?.[1] as typeof hiddenFactory;
+		const shown = shownFactory(undefined as never, undefined as never)
+			.render(80)
+			.join("\n");
+		expect(shown).toContain("Todos");
+		expect(shown).toContain("Implement feature");
+		expect(shown).toContain("Implementing the todo display toggle");
 		expect(notify).toHaveBeenLastCalledWith("Todo list shown.", "info");
 	});
 
