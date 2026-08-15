@@ -273,20 +273,32 @@ describe("subagents command registration", () => {
 		expect(saved).toEqual([8, 16]);
 	});
 
-	it("collects completed results through a released runtime join binding", async () => {
+	it("automatically uses the synchronous user collector without collection notifications or bindings", async () => {
 		let handler: any;
-		const markJoined = mock();
-		const release = mock();
 		const notify = mock();
+		let conversation = fakeAgent({
+			conversationId: "c1",
+			initiatedBy: "user",
+		});
+		const collectSubagentForUser = mock(() => {
+			const latest = conversation.generations.at(-1)!;
+			conversation = {
+				...conversation,
+				generations: [
+					...conversation.generations.slice(0, -1),
+					{
+						...latest,
+						receipts: { ...latest.receipts, user: true },
+					},
+				],
+			};
+			return { conversationId: "c1", generation: 1, collected: true };
+		});
 		const manager = {
 			configure: mock(),
-			listConversations: () => [],
+			listConversations: () => [conversation],
 			onConversationUpdate: () => () => {},
-			bindSubagentJoin: mock(() => ({
-				completion: Promise.resolve(),
-				markJoined,
-				release,
-			})),
+			collectSubagentForUser,
 		};
 		registerSubagentsCommand(
 			{
@@ -306,23 +318,25 @@ describe("subagents command registration", () => {
 			ui: {
 				notify,
 				custom: async (factory: any) => {
-					const component = factory(
-						{ requestRender() {} },
-						{},
-						undefined,
-						() => {},
-					);
-					await component.options.onCollect("c1");
+					factory({ requestRender() {} }, {}, undefined, () => {});
 				},
 			},
 		});
 
-		expect(manager.bindSubagentJoin).toHaveBeenCalledWith(["c1"]);
-		expect(markJoined).toHaveBeenCalledOnce();
-		expect(markJoined.mock.invocationCallOrder[0]).toBeLessThan(
-			release.mock.invocationCallOrder[0],
+		expect(collectSubagentForUser).toHaveBeenCalledWith("c1");
+		expect(collectSubagentForUser).toHaveReturnedWith({
+			conversationId: "c1",
+			generation: 1,
+			collected: true,
+		});
+		expect(conversation.generations.at(-1)).toMatchObject({
+			activeCollectionCount: 0,
+			receipts: { user: true, model: false },
+		});
+		expect(notify).not.toHaveBeenCalledWith(
+			expect.stringContaining("Collected"),
+			expect.anything(),
 		);
-		expect(notify).toHaveBeenCalledWith("Collected subagent c1.", "info");
 	});
 
 	it("reports asynchronous settings save failures", async () => {

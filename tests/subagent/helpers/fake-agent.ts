@@ -1,5 +1,6 @@
 import type { Usage } from "@earendil-works/pi-ai";
 import type {
+	CollectionReceipts,
 	ConversationSnapshot,
 	GenerationActivitySnapshot,
 	GenerationInitiator,
@@ -59,8 +60,8 @@ export interface FakeGenerationOptions {
 	usage?: Usage;
 	totalUsage?: Usage;
 	cost?: Usage["cost"];
-	joined?: boolean;
-	observerCount?: number;
+	receipts?: Partial<CollectionReceipts>;
+	activeCollectionCount?: number;
 	nestedJoins?: GenerationSnapshot["nestedJoins"];
 	steers?: GenerationSnapshot["steers"];
 }
@@ -142,8 +143,11 @@ export function fakeGeneration(
 		},
 		cost: options.cost ?? usage.cost,
 		usage,
-		observerCount: options.observerCount ?? 0,
-		joined: options.joined ?? false,
+		activeCollectionCount: options.activeCollectionCount ?? 0,
+		receipts: {
+			user: options.receipts?.user ?? false,
+			model: options.receipts?.model ?? false,
+		},
 		nestedJoins: options.nestedJoins ?? [],
 		steers: options.steers ?? [],
 	};
@@ -164,7 +168,7 @@ export function fakeAgent(
 				? { startedInParentGeneration: options.spawnedInGeneration }
 				: {}),
 		prompt: options.prompt ?? options.options?.prompt,
-		joined: options.joined,
+		receipts: options.receipts,
 	});
 	const generations = options.generations ?? [
 		...previousGenerations,

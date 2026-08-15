@@ -20,6 +20,11 @@ import type { SpawnRequest } from "./schema.js";
 
 export type GenerationKind = "spawn" | "resume";
 export type GenerationInitiator = "user" | "model";
+export type CollectionAudience = "user" | "model";
+export interface CollectionReceipts {
+	readonly user: boolean;
+	readonly model: boolean;
+}
 
 export const GENERATION_OUTCOME_STATUSES = [
 	"completed",
@@ -55,8 +60,8 @@ export type ConversationUpdateKind =
 	| "turn"
 	| "usage"
 	| "compaction"
-	| "joined"
-	| "observer"
+	| "collection"
+	| "activeCollection"
 	| "nestedJoin"
 	| "steer"
 	| "phase"
@@ -160,8 +165,8 @@ export interface GenerationSnapshot {
 	readonly cost: Usage["cost"];
 	/** Latest assistant-call usage, used for current context metrics. */
 	readonly usage: Usage;
-	readonly observerCount: number;
-	readonly joined: boolean;
+	readonly activeCollectionCount: number;
+	readonly receipts: CollectionReceipts;
 	readonly nestedJoins?: readonly NestedJoinAttemptSnapshot[];
 	readonly steers: readonly SteerReceipt[];
 }
@@ -209,8 +214,11 @@ export class Generation {
 	private readonly onChange: GenerationActivityListener;
 	readonly startedInParentGeneration: number | undefined;
 	state: GenerationState = { kind: "queued" };
-	observerCount = 0;
-	joined = false;
+	activeCollectionCount = 0;
+	readonly receipts: { user: boolean; model: boolean } = {
+		user: false,
+		model: false,
+	};
 	readonly nestedJoins: Array<{
 		toolCallId?: string;
 		targets: NestedJoinTargetSnapshot[];
@@ -458,7 +466,7 @@ export type ConversationUpdateListener = (
 export interface GenerationBinding {
 	readonly generation: Generation;
 	snapshot(): GenerationSnapshot;
-	markJoined(): void;
+	markCollected(audience: CollectionAudience): void;
 	release(): void;
 }
 
@@ -542,10 +550,10 @@ export class Conversation {
 			this.stopping !== undefined || this.latestGeneration.state.kind !== "done"
 		);
 	}
-	get latestResultJoined(): boolean {
+	latestResultCollected(audience: CollectionAudience): boolean {
 		return (
 			this.latestGeneration.state.kind === "done" &&
-			this.latestGeneration.joined
+			this.latestGeneration.receipts[audience]
 		);
 	}
 	get hasRetainedResumableSession(): boolean {
@@ -561,8 +569,8 @@ export class Conversation {
 		return (
 			!this.stopping &&
 			latest.state.kind === "done" &&
-			latest.observerCount === 0 &&
-			latest.joined &&
+			latest.activeCollectionCount === 0 &&
+			latest.receipts[latest.initiatedBy] &&
 			this.hasRetainedResumableSession
 		);
 	}
@@ -672,18 +680,20 @@ export class Conversation {
 
 	bindGeneration(generation: Generation): GenerationBinding {
 		this.requireGeneration(generation);
-		generation.observerCount++;
-		this.listener(this, "observer");
+		generation.activeCollectionCount++;
+		this.listener(this, "activeCollection");
 		let released = false;
 		return {
 			generation,
 			snapshot: () => this.project(generation),
-			markJoined: () => this.markJoined(generation),
+			markCollected: (audience) => {
+				this.markCollected(generation, audience);
+			},
 			release: () => {
 				if (released) return;
 				released = true;
-				generation.observerCount--;
-				this.listener(this, "observer");
+				generation.activeCollectionCount--;
+				this.listener(this, "activeCollection");
 			},
 		};
 	}
@@ -784,10 +794,13 @@ export class Conversation {
 		generation.updateNestedJoin(index, update);
 		this.listener(this, "nestedJoin");
 	}
-	markJoined(generation: Generation): void {
+	markCollected(generation: Generation, audience: CollectionAudience): boolean {
 		this.requireGeneration(generation);
-		generation.joined = true;
-		this.listener(this, "joined");
+		if (generation.state.kind !== "done" || generation.receipts[audience])
+			return false;
+		generation.receipts[audience] = true;
+		this.listener(this, "collection");
+		return true;
 	}
 	setEffectiveConfig(config: EffectiveExecutionConfig): void {
 		this.effectiveConfig = config;
@@ -886,8 +899,8 @@ export class Conversation {
 			activity: Object.freeze(generation.activity.snapshot()),
 			cost: generation.activity.cost,
 			usage: generation.activity.usage,
-			observerCount: generation.observerCount,
-			joined: generation.joined,
+			activeCollectionCount: generation.activeCollectionCount,
+			receipts: Object.freeze({ ...generation.receipts }),
 			nestedJoins: Object.freeze(nestedJoins),
 			steers: Object.freeze(generation.steers.map(projectSteer)),
 		});

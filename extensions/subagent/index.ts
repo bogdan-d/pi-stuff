@@ -6,7 +6,13 @@ import { Text } from "@earendil-works/pi-tui";
 
 import { AgentRegistry } from "./agents.js";
 import { registerSubagentsCommand } from "./command/index.js";
+import type {
+	CanonicalFinishedSubagent,
+	CanonicalLiveSubagent,
+	SubagentIdentity,
+} from "./contract.js";
 import {
+	type CollectionReceipts,
 	type Conversation,
 	type ConversationSnapshot,
 	type ConversationUpdateKind,
@@ -33,11 +39,6 @@ import {
 	updateSubagentWidget,
 } from "./widget.js";
 
-export type {
-	CanonicalFinishedSubagent,
-	CanonicalLiveSubagent,
-	SubagentIdentity,
-} from "./contract.js";
 export type { SubagentAction, SubagentStatus } from "./schema.js";
 export type {
 	SubagentBatchSummary,
@@ -45,6 +46,11 @@ export type {
 	SubagentResponseEnvelope,
 	SubagentResultsEnvelope,
 } from "./tool-contract.js";
+export type {
+	CanonicalFinishedSubagent,
+	CanonicalLiveSubagent,
+	SubagentIdentity,
+};
 
 interface SubagentExtensionDependencies {
 	agentRegistry?: AgentRegistry;
@@ -163,6 +169,14 @@ export interface SubagentLifecycleEventSource {
 	): ReturnType<SubagentRuntime["projectSubagent"]>;
 }
 
+type AudienceNeutralLifecycleProjection<T> = T extends CanonicalLiveSubagent
+	? Omit<T, "collected"> & { readonly receipts: CollectionReceipts }
+	: never;
+
+/** Canonical public lifecycle data with explicit collection state for both audiences. */
+export type SubagentLifecycleEventPayload =
+	AudienceNeutralLifecycleProjection<CanonicalLiveSubagent>;
+
 /** Emits lifecycle events keyed by stable subagent identity. */
 export function registerSubagentLifecycleEvents(
 	events: SubagentEventBus | undefined,
@@ -195,7 +209,12 @@ export function registerSubagentLifecycleEvents(
 				: snapshot.status === "running"
 					? "subagent:started"
 					: "subagent:finished";
-		events.emit(event, snapshot);
+		const { collected: _collected, ...canonical } = snapshot;
+		const payload: SubagentLifecycleEventPayload = Object.freeze({
+			...canonical,
+			receipts: Object.freeze({ ...generation.receipts }),
+		}) as SubagentLifecycleEventPayload;
+		events.emit(event, payload);
 	});
 }
 

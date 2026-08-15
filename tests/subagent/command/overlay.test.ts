@@ -1,42 +1,61 @@
 import { expect, mock, test } from "bun:test";
 import { SubagentOverlayComponent } from "../../../extensions/subagent/command/overlay.js";
 import { DEFAULT_SUBAGENT_SETTINGS } from "../../../extensions/subagent/settings.js";
-import { eventually } from "../helpers/eventually.js";
 import { fakeAgent, fakeGeneration } from "../helpers/fake-agent.js";
 
 function overlayFixture(
-	initial = fakeAgent(),
+	initial = fakeAgent({ initiatedBy: "user" }),
 	others: ReturnType<typeof fakeAgent>[] = [],
+	initialPage: "conversations" | "agents" | "settings" = "conversations",
 ) {
-	let conversation = {
-		...initial,
-		resumeAllowed:
-			initial.resumeAllowed ?? initial.generations.at(-1)?.joined === true,
-	};
+	let conversations = [initial, ...others];
 	let listener = () => {};
 	const notify = mock();
 	const done = mock();
-	const onCollect = mock(async () => {
-		const latest = conversation.generations.at(-1)!;
-		conversation = {
-			...conversation,
-			resumeAllowed: true,
-			generations: [
-				...conversation.generations.slice(0, -1),
-				{ ...latest, joined: true },
-			],
+	const collectSubagentForUser = mock((conversationId: string) => {
+		const index = conversations.findIndex(
+			(conversation) => conversation.conversationId === conversationId,
+		);
+		const conversation = conversations[index];
+		const latest = conversation?.generations.at(-1);
+		const collected = Boolean(
+			conversation &&
+				!conversation.parentConversationId &&
+				latest?.status.kind === "done",
+		);
+		if (conversation && latest && collected && !latest.receipts.user) {
+			const generation = {
+				...latest,
+				receipts: { ...latest.receipts, user: true },
+			};
+			conversations[index] = {
+				...conversation,
+				generations: [...conversation.generations.slice(0, -1), generation],
+				resumeAllowed:
+					generation.initiatedBy === "user" || conversation.resumeAllowed,
+			};
+			listener();
+		}
+		return {
+			conversationId,
+			generation: latest?.generation ?? 0,
+			collected,
 		};
-		listener();
 	});
 	const onResume = mock();
 	const manager = {
-		listConversations: () => [conversation, ...others],
+		listConversations: () => conversations,
 		onConversationUpdate: (next: () => void) => {
 			listener = next;
 			return () => {};
 		},
-		projectSubagent: () => ({
-			actionHints: conversation.currentGeneration ? [] : ["remove"],
+		collectSubagentForUser,
+		projectSubagent: (conversationId: string) => ({
+			actionHints: conversations.find(
+				(conversation) => conversation.conversationId === conversationId,
+			)?.currentGeneration
+				? []
+				: ["remove"],
 		}),
 	};
 	const component = new SubagentOverlayComponent(
@@ -46,17 +65,34 @@ function overlayFixture(
 		{} as any,
 		done,
 		{
-			initialPage: "conversations",
+			initialPage,
 			agents: [],
 			settings: DEFAULT_SUBAGENT_SETTINGS,
 			notify,
 			onSettingsChange: mock(),
 			onStart: mock(),
 			onResume,
-			onCollect,
 		},
 	);
-	return { component, done, notify, onCollect, onResume };
+	return {
+		component,
+		done,
+		notify,
+		collectSubagentForUser,
+		onResume,
+		conversation: (conversationId: string) =>
+			conversations.find(
+				(conversation) => conversation.conversationId === conversationId,
+			)!,
+		updateConversation: (next: ReturnType<typeof fakeAgent>) => {
+			conversations = conversations.map((conversation) =>
+				conversation.conversationId === next.conversationId
+					? next
+					: conversation,
+			);
+			listener();
+		},
+	};
 }
 
 test("Ctrl+Alt+A closes the overlay", () => {
@@ -67,26 +103,162 @@ test("Ctrl+Alt+A closes the overlay", () => {
 	expect(done).toHaveBeenCalledTimes(1);
 });
 
-test("completed results must be collected before the overlay enables resume", async () => {
-	const { component, onCollect, onResume } = overlayFixture();
+test("initial terminal selection is automatically collected and immediately enables snapshot actions", () => {
+	const fixture = overlayFixture();
 
-	expect(component.render(100).join("\n")).toContain("[g] collect");
-	expect(component.render(100).join("\n")).toContain("[x] remove");
-	expect(component.render(100).join("\n")).not.toContain("[r] resume");
+	expect(fixture.collectSubagentForUser).toHaveBeenCalledTimes(1);
+	expect(fixture.collectSubagentForUser).toHaveBeenCalledWith("c1");
+	expect(fixture.conversation("c1").generations.at(-1)).toMatchObject({
+		activeCollectionCount: 0,
+		receipts: { user: true, model: false },
+	});
+	const rendered = fixture.component.render(100).join("\n");
+	expect(rendered).not.toContain("collect");
+	expect(rendered).not.toContain("[g]");
+	expect(rendered).toContain("[r] resume");
 
-	component.handleInput("g");
-	await eventually(() => expect(onCollect).toHaveBeenCalledWith("c1"));
+	fixture.component.handleInput("g");
+	expect(fixture.collectSubagentForUser).toHaveBeenCalledTimes(1);
+});
 
-	expect(component.render(100).join("\n")).not.toContain("[g] collect");
-	expect(component.render(100).join("\n")).toContain("[r] resume");
-	component.handleInput("r");
-	(component as any).submitPrompt("follow up");
-	expect(onResume).toHaveBeenCalledWith("c1", "follow up");
+test("navigation automatically collects each newly selected terminal conversation", () => {
+	const first = fakeAgent({
+		conversationId: "first",
+		label: "First",
+		initiatedBy: "user",
+		createdAt: 2,
+	});
+	const second = fakeAgent({
+		conversationId: "second",
+		label: "Second",
+		initiatedBy: "user",
+		createdAt: 1,
+	});
+	const fixture = overlayFixture(first, [second]);
+
+	expect(fixture.collectSubagentForUser.mock.calls).toEqual([["first"]]);
+	fixture.component.handleInput("j");
+	expect(fixture.collectSubagentForUser.mock.calls).toEqual([
+		["first"],
+		["second"],
+	]);
+	expect(fixture.conversation("second").generations.at(-1)?.receipts.user).toBe(
+		true,
+	);
+});
+
+test("filter changes and returning to conversations trigger automatic collection", () => {
+	const first = fakeAgent({
+		conversationId: "first",
+		label: "Alpha",
+		initiatedBy: "user",
+		createdAt: 2,
+	});
+	const second = fakeAgent({
+		conversationId: "second",
+		label: "Beta",
+		initiatedBy: "user",
+		createdAt: 1,
+	});
+	const filtered = overlayFixture(first, [second]);
+	filtered.component.handleInput("/");
+	filtered.component.handleInput("B");
+	expect(filtered.collectSubagentForUser.mock.calls).toEqual([
+		["first"],
+		["second"],
+	]);
+
+	const returning = overlayFixture(first, [], "agents");
+	expect(returning.collectSubagentForUser).not.toHaveBeenCalled();
+	returning.component.handleInput("\t");
+	expect(returning.collectSubagentForUser).toHaveBeenCalledWith("first");
+});
+
+test("a selected active generation is collected when it becomes terminal", () => {
+	const fixture = overlayFixture(
+		fakeAgent({ initiatedBy: "user", status: { kind: "running" } }),
+	);
+	expect(fixture.collectSubagentForUser.mock.calls).toEqual([["c1"]]);
+
+	fixture.updateConversation(
+		fakeAgent({ initiatedBy: "user", status: { kind: "completed" } }),
+	);
+
+	expect(fixture.collectSubagentForUser.mock.calls).toEqual([["c1"], ["c1"]]);
+	expect(fixture.conversation("c1").generations.at(-1)?.receipts.user).toBe(
+		true,
+	);
+});
+
+test("a newly resumed generation can be collected after the prior attempt", () => {
+	const first = fakeGeneration({
+		generation: 1,
+		initiatedBy: "user",
+		receipts: { user: true },
+	});
+	const running = fakeGeneration({
+		generation: 2,
+		initiatedBy: "user",
+		status: { kind: "running" },
+	});
+	const fixture = overlayFixture(
+		fakeAgent({ generations: [first], resumeAllowed: true }),
+	);
+
+	fixture.updateConversation(fakeAgent({ generations: [first, running] }));
+	fixture.updateConversation(
+		fakeAgent({
+			generations: [
+				first,
+				fakeGeneration({
+					generation: 2,
+					initiatedBy: "user",
+					status: { kind: "completed" },
+				}),
+			],
+		}),
+	);
+
+	expect(fixture.collectSubagentForUser.mock.calls).toEqual([
+		["c1"],
+		["c1"],
+		["c1"],
+	]);
+	expect(fixture.conversation("c1").generations.at(-1)?.receipts.user).toBe(
+		true,
+	);
+});
+
+test("an inactive unselected completion is not collected", () => {
+	const selected = fakeAgent({
+		conversationId: "selected",
+		status: { kind: "running" },
+		createdAt: 2,
+	});
+	const inactive = fakeAgent({
+		conversationId: "inactive",
+		status: { kind: "running" },
+		createdAt: 1,
+	});
+	const fixture = overlayFixture(selected, [inactive]);
+
+	fixture.updateConversation(
+		fakeAgent({
+			conversationId: "inactive",
+			status: { kind: "completed" },
+			createdAt: 1,
+		}),
+	);
+
+	expect(fixture.collectSubagentForUser.mock.calls).toEqual([["selected"]]);
+	expect(
+		fixture.conversation("inactive").generations.at(-1)?.receipts.user,
+	).toBe(false);
 });
 
 test("the overlay trusts the snapshot resume capability", () => {
 	const { component, onResume } = overlayFixture(
-		fakeAgent({ joined: true, resumeAllowed: false }),
+		fakeAgent({ receipts: { user: true }, resumeAllowed: false }),
 	);
 
 	expect(component.render(100).join("\n")).not.toContain(
@@ -94,31 +266,6 @@ test("the overlay trusts the snapshot resume capability", () => {
 	);
 	component.handleInput("r");
 	expect(onResume).not.toHaveBeenCalled();
-});
-
-test("the overlay does not collect active or already joined results", async () => {
-	for (const conversation of [
-		fakeAgent({ status: { kind: "running" } }),
-		fakeAgent({ joined: true, resumeAllowed: true }),
-	]) {
-		const { component, onCollect } = overlayFixture(conversation);
-		component.handleInput("g");
-		await Promise.resolve();
-		expect(onCollect).not.toHaveBeenCalled();
-	}
-});
-
-test("collection failures remain unjoined and are reported", async () => {
-	const fixture = overlayFixture();
-	fixture.onCollect.mockRejectedValueOnce(new Error("collect failed"));
-
-	fixture.component.handleInput("g");
-	await eventually(() =>
-		expect(fixture.notify).toHaveBeenCalledWith("collect failed", "warning"),
-	);
-
-	expect(fixture.component.render(100).join("\n")).toContain("[g] collect");
-	expect(fixture.component.render(100).join("\n")).not.toContain("[r] resume");
 });
 
 test("generation detail uses one-based chronology instead of opaque identities", () => {
@@ -388,7 +535,7 @@ test("conversation actions render as colored chips separate from navigation", ()
 test("conversation actions hide unavailable subtree mutations", () => {
 	const root = fakeAgent({
 		conversationId: "root",
-		joined: true,
+		receipts: { model: true },
 		resumeAllowed: true,
 		createdAt: 2,
 	});

@@ -82,13 +82,17 @@ function emitReportedUsage(
 		});
 }
 
-function joinLatest(runtime: SubagentRuntime, subagentId: any): void {
+function collectLatest(
+	runtime: SubagentRuntime,
+	subagentId: any,
+	audience: "user" | "model",
+): void {
 	const binding = runtime.bindSubagentJoin([subagentId]);
-	binding.markJoined();
+	binding.markCollected(audience);
 	binding.release();
 }
 
-test("list joined=false includes active subagents and projects joined explicitly", async () => {
+test("list collected=false includes active subagents and projects model collection explicitly", async () => {
 	let release!: () => void;
 	const gate = new Promise<void>((done) => {
 		release = done;
@@ -106,7 +110,7 @@ test("list joined=false includes active subagents and projects joined explicitly
 	await new Promise((done) => setImmediate(done));
 
 	const listed = response(
-		listAction(deps(runtime), { action: "list", joined: false }),
+		listAction(deps(runtime), { action: "list", collected: false }),
 	);
 
 	expect(listed.results).toMatchObject([
@@ -115,12 +119,39 @@ test("list joined=false includes active subagents and projects joined explicitly
 			subagentId: identity.conversationId,
 			generation: 1,
 			status: "running",
-			joined: false,
+			collected: false,
 		},
 	]);
 
 	release();
 	await start.completion;
+	expect(
+		response(listAction(deps(runtime), { action: "list", collected: false }))
+			.results,
+	).toHaveLength(1);
+	const collected = response(
+		await joinAction(
+			deps(runtime),
+			{ action: "join", subagentIds: [identity.conversationId] },
+			undefined,
+			undefined,
+		),
+	);
+	expect(collected.results[0]).toMatchObject({
+		subagentId: identity.conversationId,
+		generation: 1,
+		status: "completed",
+		collected: true,
+		actionHints: expect.arrayContaining(["resume"]),
+	});
+	expect(
+		response(listAction(deps(runtime), { action: "list", collected: false }))
+			.results,
+	).toEqual([]);
+	expect(
+		response(listAction(deps(runtime), { action: "list", collected: true }))
+			.results,
+	).toHaveLength(1);
 });
 
 test("inspect separates current generation metrics from prior generation history", async () => {
@@ -143,7 +174,7 @@ test("inspect separates current generation metrics from prior generation history
 	await runtime.steerSubagent(identity.conversationId, "redirect");
 	releaseFirst();
 	await initial.completion;
-	joinLatest(runtime, identity.conversationId);
+	collectLatest(runtime, identity.conversationId, "model");
 
 	const resumed = runtime.startTasks(ctx, [
 		{ kind: "resume", subagentId: identity.conversationId, prompt: "second" },
@@ -188,7 +219,7 @@ test("inspect separates current generation metrics from prior generation history
 				generation: 1,
 				kind: "spawn",
 				status: "completed",
-				joined: true,
+				collected: true,
 				elapsedMs: expect.any(Number),
 				turns: 0,
 				compactions: 0,
@@ -235,7 +266,7 @@ test("inspect and join project cumulative resumed conversation cost", async () =
 	]);
 	const identity = first.starts[0] as any;
 	await first.completion;
-	joinLatest(runtime, identity.conversationId);
+	collectLatest(runtime, identity.conversationId, "model");
 	await runtime.startTasks(ctx, [
 		{ kind: "resume", subagentId: identity.conversationId, prompt: "second" },
 	]).completion;
@@ -280,6 +311,8 @@ test("cancelling a parent does not crash its in-flight nested join update", asyn
 	const joinCompletion = new Promise<void>((resolve) => {
 		completeJoin = resolve;
 	});
+	let collectionCalls = 0;
+	let releaseCalls = 0;
 	const binding = {
 		owner: { conversationId: parent.conversationId, generation: 1 },
 		attemptIndex: 0,
@@ -292,8 +325,15 @@ test("cancelling a parent does not crash its in-flight nested join update", asyn
 				status: { kind: "running", startedAt: Date.now() },
 			},
 		],
-		markJoined() {},
-		release() {},
+		markCollected() {
+			collectionCalls++;
+		},
+		finalizeCollection() {
+			throw new Error("cancelled join must not finalize collection");
+		},
+		release() {
+			releaseCalls++;
+		},
 		interrupt() {
 			completeJoin();
 		},
@@ -317,7 +357,7 @@ test("cancelling a parent does not crash its in-flight nested join update", asyn
 			throw new Error("unavailable");
 		},
 		conversationDisplay: () => ({ agentName: "worker", label: "child" }),
-		unjoinedDirectChildGenerations: () => [],
+		uncollectedDirectChildGenerations: () => [],
 		projectSubagent: (_id: string, caller: SubagentCaller) => ({
 			ok: true,
 			subagentId: "calm-river",
@@ -325,7 +365,7 @@ test("cancelling a parent does not crash its in-flight nested join update", asyn
 			label: "child",
 			generation: 1,
 			status: "running",
-			joined: false,
+			collected: false,
 			actionHints: ["inspect", "join"],
 			callerGeneration: caller.generation.number,
 		}),
@@ -353,6 +393,172 @@ test("cancelling a parent does not crash its in-flight nested join update", asyn
 
 	controller.abort();
 	await execution;
+	expect(collectionCalls).toBe(0);
+	expect(releaseCalls).toBe(1);
+});
+
+test("final join uses the binding's atomic collection projection", async () => {
+	let complete!: () => void;
+	const completion = new Promise<void>((resolve) => {
+		complete = resolve;
+	});
+	let terminal = false;
+	const calls: string[] = [];
+	const reference = {
+		conversationId: "calm-river",
+		generation: 1,
+	} as const;
+	const terminalStatus = {
+		kind: "done",
+		outcome: "completed",
+		output: "done",
+		completedAt: Date.now(),
+	} as const;
+	const canonical = {
+		ok: true as const,
+		subagentId: reference.conversationId,
+		agent: "worker",
+		label: "child",
+		generation: 1,
+		initiatedBy: "model" as const,
+		status: "completed" as const,
+		collected: true,
+		actionHints: ["resume", "inspect", "join"] as const,
+	};
+	const runtime = {
+		scheduler: {
+			suspendConversationSlotDuring: (
+				_parent: Conversation,
+				wait: () => Promise<void>,
+			) => wait(),
+		},
+		validateSubagentJoin() {},
+		bindSubagentJoin: () => ({
+			targets: [reference],
+			completion,
+			project: () => [
+				{
+					...reference,
+					status: terminal
+						? terminalStatus
+						: { kind: "running", startedAt: Date.now() },
+				},
+			],
+			markCollected() {
+				throw new Error("final join must finalize atomically");
+			},
+			finalizeCollection(audience: "user" | "model") {
+				expect(terminal).toBe(true);
+				calls.push(`finalize:${audience}`);
+				return [{ ...reference, status: terminalStatus, canonical }];
+			},
+			release() {
+				calls.push("release");
+			},
+		}),
+		onConversationUpdate: () => () => {},
+		listConversations: () => [],
+		generationSnapshot: () => {
+			throw new Error("unavailable");
+		},
+		conversationDisplay: () => ({ agentName: "worker", label: "child" }),
+		uncollectedDirectChildGenerations: () => [],
+		projectSubagent: () => {
+			if (terminal)
+				throw new Error("final join must not re-project the latest generation");
+			return {
+				...canonical,
+				status: "running",
+				collected: false,
+				actionHints: ["inspect", "join"],
+			};
+		},
+	} as any;
+
+	const joining = joinAction(
+		deps(runtime),
+		{ action: "join", subagentIds: [reference.conversationId] } as any,
+		undefined,
+		undefined,
+	);
+	await new Promise((resolve) => setImmediate(resolve));
+	expect(calls).toEqual([]);
+
+	terminal = true;
+	complete();
+	const result = response(await joining);
+
+	expect(calls).toEqual(["finalize:model"]);
+	expect(result.results[0]).toMatchObject({
+		generation: 1,
+		status: "completed",
+		collected: true,
+		output: "done",
+		actionHints: expect.arrayContaining(["resume"]),
+	});
+});
+
+test("re-entrant resume on collection release cannot replace the final join projection", async () => {
+	const runtime = new SubagentRuntime(
+		registry,
+		1,
+		async (_ctx, conversation, generation) => {
+			conversation.bindSession(
+				generation,
+				generation.kind === "resume"
+					? conversation.sessionForResume()!
+					: session(),
+			);
+			return completedGeneration(conversation, generation, generation.prompt);
+		},
+	);
+	const start = runtime.startTasks(ctx, [
+		{ kind: "spawn", agent: "worker", prompt: "first", label: "race" },
+	]);
+	await start.completion;
+	const first = start.starts[0] as any;
+	let resumed: ReturnType<SubagentRuntime["startTasks"]> | undefined;
+	const unsubscribe = runtime.onConversationUpdate((conversation, kind) => {
+		if (
+			conversation.conversationId !== first.conversationId ||
+			kind !== "activeCollection" ||
+			resumed
+		)
+			return;
+		const snapshot = runtime.generationSnapshot(first);
+		if (snapshot.activeCollectionCount !== 0 || !snapshot.receipts.model)
+			return;
+		resumed = runtime.startTasks(ctx, [
+			{
+				kind: "resume",
+				subagentId: first.conversationId,
+				prompt: "second",
+			},
+		]);
+	});
+
+	const joined = response(
+		await joinAction(
+			deps(runtime),
+			{ action: "join", subagentIds: [first.conversationId] },
+			undefined,
+			undefined,
+		),
+	);
+
+	expect(joined.results[0]).toMatchObject({
+		generation: 1,
+		status: "completed",
+		collected: true,
+		output: "first",
+		actionHints: expect.arrayContaining(["resume"]),
+	});
+	expect(resumed?.starts[0]).toMatchObject({ ok: true, generation: 2 });
+	expect(runtime.conversation(first.conversationId).generations).toHaveLength(
+		2,
+	);
+	unsubscribe();
+	await resumed?.completion;
 });
 
 test("cancel details correlate the exact generation without exposing it in public JSON", async () => {
@@ -369,7 +575,7 @@ test("cancel details correlate the exact generation without exposing it in publi
 				label: "cancelled task",
 				generation: 2,
 				status: "cancelled",
-				joined: false,
+				collected: false,
 				actionHints: ["inspect", "remove"],
 			}),
 		},
@@ -486,7 +692,7 @@ test("final joins use null when terminal generations have no output", async () =
 	await start.completion;
 	const ids = start.starts.map((item) => (item as any).conversationId);
 
-	const joined = response(
+	const collectionResult = response(
 		await joinAction(
 			deps(runtime),
 			{ action: "join", subagentIds: ids },
@@ -496,7 +702,7 @@ test("final joins use null when terminal generations have no output", async () =
 	);
 
 	expect(
-		joined.results.map((result: any) => ({
+		collectionResult.results.map((result: any) => ({
 			generation: result.generation,
 			status: result.status,
 			output: result.output,
@@ -507,7 +713,10 @@ test("final joins use null when terminal generations have no output", async () =
 		{ generation: 1, status: "cancelled", output: null },
 		{ generation: 1, status: "failed", output: null },
 	]);
-	expect(joined.results[3]).toMatchObject({
+	expect(
+		collectionResult.results.every((result: any) => result.collected),
+	).toBe(true);
+	expect(collectionResult.results[3]).toMatchObject({
 		failure: "Subagent failed: provider failed",
 	});
 
@@ -522,7 +731,7 @@ test("final joins use null when terminal generations have no output", async () =
 	expect(repeated.results[0]).toMatchObject({
 		generation: 1,
 		status: "cancelled",
-		joined: true,
+		collected: true,
 		output: null,
 	});
 });
@@ -564,6 +773,12 @@ test("running join updates omit output until the final result", async () => {
 		undefined,
 		(update) => updates.push(update),
 	);
+	expect(
+		runtime.generationSnapshot({
+			conversationId: identity.conversationId,
+			generation: 1,
+		}).activeCollectionCount,
+	).toBe(1);
 	expect(response(updates[0]).results[0]).toMatchObject({
 		generation: 1,
 		status: "running",
@@ -581,12 +796,19 @@ test("running join updates omit output until the final result", async () => {
 	expect(final.results[0]).toMatchObject({
 		generation: 1,
 		status: "completed",
+		collected: true,
 		output: "done",
 	});
+	const snapshot = runtime.generationSnapshot({
+		conversationId: identity.conversationId,
+		generation: 1,
+	});
+	expect(snapshot.activeCollectionCount).toBe(0);
+	expect(snapshot.receipts).toEqual({ user: false, model: true });
 	await start.completion;
 });
 
-test("join rendering reports an unjoined resumed child from a historical owner generation", async () => {
+test("join rendering reports an uncollected resumed child from a historical owner generation", async () => {
 	let releaseGrandparent!: () => void;
 	let releaseParent!: () => void;
 	let releaseResumedChild!: () => void;
@@ -659,7 +881,7 @@ test("join rendering reports an unjoined resumed child from a historical owner g
 		parentCaller,
 	);
 	await childJoin.completion;
-	childJoin.markJoined();
+	childJoin.markCollected("model");
 	childJoin.release();
 
 	const resumedChildStart = runtime.startTasks(
@@ -678,7 +900,7 @@ test("join rendering reports an unjoined resumed child from a historical owner g
 	releaseParent();
 	await parentStart.completion;
 	await parentJoin.completion;
-	parentJoin.markJoined();
+	parentJoin.markCollected("model");
 	parentJoin.release();
 	const resumedParent = runtime.startTasks(
 		ctx,

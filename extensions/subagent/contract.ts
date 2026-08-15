@@ -22,19 +22,19 @@ interface CanonicalSubagentBase extends SubagentIdentity {
 
 export type CanonicalActiveSubagent = CanonicalSubagentBase & {
 	readonly status: "queued" | "running";
-	readonly joined: false;
+	readonly collected: false;
 	readonly failure?: never;
 };
 
 export type CanonicalNonFailedSubagent = CanonicalSubagentBase & {
 	readonly status: "completed" | "cancelled";
-	readonly joined: boolean;
+	readonly collected: boolean;
 	readonly failure?: never;
 };
 
 export type CanonicalFailedSubagent = CanonicalSubagentBase & {
 	readonly status: "failed";
-	readonly joined: boolean;
+	readonly collected: boolean;
 	readonly failure: string;
 };
 
@@ -52,7 +52,7 @@ export interface LiveSubagentProjectionSource {
 	readonly generation: number;
 	readonly initiatedBy: GenerationInitiator;
 	readonly generationStatus: GenerationViewStatus;
-	readonly joined: boolean;
+	readonly collected: boolean;
 	readonly directlyOwned: boolean;
 	readonly inspectable: boolean;
 	readonly resumeAllowed: boolean;
@@ -86,8 +86,7 @@ export function projectActionHints(
 
 	const status = projectSubagentStatus(source.generationStatus);
 	const actions: SubagentAction[] = [];
-	if (isFinished(status) && source.joined && source.resumeAllowed)
-		actions.push("resume");
+	if (isFinished(status) && source.resumeAllowed) actions.push("resume");
 	if (status === "running") actions.push("steer");
 	if (status === "queued" || status === "running") actions.push("cancel");
 	actions.push("inspect", "join");
@@ -138,15 +137,21 @@ export function projectLiveSubagent(
 		initiatedBy: source.initiatedBy,
 	};
 	if (status === "queued" || status === "running") {
-		return { ...base, status, joined: false, actionHints };
+		return { ...base, status, collected: false, actionHints };
 	}
 	if (status === "failed") {
 		const failure = projectFailure(source.generationStatus, failureMode);
 		if (!failure)
 			throw new Error("Failed subagent projection requires a failure message.");
-		return { ...base, status, joined: source.joined, actionHints, failure };
+		return {
+			...base,
+			status,
+			collected: source.collected,
+			actionHints,
+			failure,
+		};
 	}
-	return { ...base, status, joined: source.joined, actionHints };
+	return { ...base, status, collected: source.collected, actionHints };
 }
 
 export function isFinishedSubagent(

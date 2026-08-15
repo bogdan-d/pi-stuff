@@ -20,8 +20,8 @@ function fixture(
 		generation: 1,
 		initiatedBy: "model",
 		createdAt: 1,
-		observerCount: 0,
-		joined: false,
+		activeCollectionCount: 0,
+		receipts: { user: false, model: false },
 		status: {
 			kind: "done",
 			outcome: "completed",
@@ -79,7 +79,7 @@ function fixture(
 				generation: latest.generation,
 				initiatedBy: latest.initiatedBy ?? "model",
 				status,
-				joined: latest.joined,
+				collected: latest.receipts.model,
 				actionHints: ["inspect", "join", "remove"],
 				...(status === "failed"
 					? {
@@ -178,12 +178,27 @@ test("user-started completion notifies the UI and queues awareness without wakin
 	assert.equal(f.sent[0].message.customType, "subagent-activity");
 	assert.deepEqual(f.sent[0].options, { deliverAs: "nextTurn" });
 	assert.match(f.sent[0].message.content, /initiatedBy="user"/);
+	assert.match(f.sent[0].message.content, /collected="false"/);
 	assert.deepEqual(f.notified, [
 		{
 			message: "1 subagent finished: worker (primary task) · completed",
 			level: "info",
 		},
 	]);
+	f.notifier.unsubscribe();
+});
+
+test("automatic user collection suppresses only the human completion notification", () => {
+	const f = fixture();
+	f.generation.initiatedBy = "user";
+	f.generation.receipts.user = true;
+	f.fire("session_start");
+	f.flush();
+
+	assert.equal(f.sent.length, 1);
+	assert.equal(f.sent[0].message.customType, "subagent-activity");
+	assert.match(f.sent[0].message.content, /collected="false"/);
+	assert.equal(f.notified.length, 0);
 	f.notifier.unsubscribe();
 });
 
@@ -242,6 +257,35 @@ test("subscribed user-started work reports completion to the model without an ac
 	f.notifier.unsubscribe();
 });
 
+test("user receipt does not suppress model completion for a subscribed generation", () => {
+	const f = fixture();
+	f.generation.receipts.user = true;
+	f.fire("session_start");
+	f.flush();
+
+	assert.equal(f.sent.length, 1);
+	assert.equal(f.sent[0].message.customType, "subagent-completion");
+	assert.equal(f.sent[0].message.details.completions[0].collected, false);
+	assert.equal(f.notified.length, 0);
+	f.notifier.unsubscribe();
+});
+
+test("model receipt does not suppress the human UI notification", () => {
+	const f = fixture();
+	f.generation.receipts.model = true;
+	f.fire("session_start");
+	f.flush();
+
+	assert.equal(f.sent.length, 0);
+	assert.deepEqual(f.notified, [
+		{
+			message: "1 subagent finished: worker (primary task) · completed",
+			level: "info",
+		},
+	]);
+	f.notifier.unsubscribe();
+});
+
 test("context reconciliation removes a queued completion observed before model delivery", () => {
 	const f = fixture();
 	f.fire("session_start");
@@ -276,8 +320,8 @@ test("context reconciliation rebuilds a completion batch from still-unobserved g
 	const second: any = {
 		generation: 1,
 		createdAt: 1,
-		observerCount: 0,
-		joined: false,
+		activeCollectionCount: 0,
+		receipts: { user: false, model: false },
 		status: { kind: "done", outcome: "error", completedAt: 3 },
 	};
 	f.conversations.push({
@@ -315,7 +359,7 @@ test("context reconciliation rebuilds a completion batch from still-unobserved g
 		reconciled[0].content,
 		[
 			"<subagent-notification>",
-			'  <subagent subagentId="still-forest" generation="1" initiatedBy="model" status="failed" agent="explorer" label="second &lt;task&gt;" joined="false" actionHints="inspect,join,remove" failure="Subagent failed: unknown error"/>',
+			'  <subagent subagentId="still-forest" generation="1" initiatedBy="model" status="failed" agent="explorer" label="second &lt;task&gt;" collected="false" actionHints="inspect,join,remove" failure="Subagent failed: unknown error"/>',
 			"</subagent-notification>",
 		].join("\n"),
 	);
@@ -331,7 +375,7 @@ test("context reconciliation rebuilds a completion batch from still-unobserved g
 	f.notifier.unsubscribe();
 });
 
-test("context reconciliation omits queued completions joined before delivery", () => {
+test("context reconciliation omits queued completions collected for the model before delivery", () => {
 	const f = fixture();
 	f.fire("session_start");
 	f.flush();
@@ -340,13 +384,13 @@ test("context reconciliation omits queued completions joined before delivery", (
 		customType: "subagent-completion",
 		...f.sent[0].message,
 	};
-	f.generation.joined = true;
+	f.generation.receipts.model = true;
 
 	assert.deepEqual(f.notifier.reconcileMessages([queued] as never), []);
 	f.notifier.unsubscribe();
 });
 
-test("context reconciliation temporarily hides a completion with an active join observer", () => {
+test("context reconciliation temporarily hides a completion with an active collection binding", () => {
 	const f = fixture();
 	f.fire("session_start");
 	f.flush();
@@ -356,11 +400,27 @@ test("context reconciliation temporarily hides a completion with an active join 
 		...f.sent[0].message,
 	};
 
-	f.generation.observerCount = 1;
+	f.generation.activeCollectionCount = 1;
 	assert.deepEqual(f.notifier.reconcileMessages([queued] as never), []);
 
-	f.generation.observerCount = 0;
+	f.generation.activeCollectionCount = 0;
 	assert.equal(f.notifier.reconcileMessages([queued] as never).length, 1);
+	f.notifier.unsubscribe();
+});
+
+test("active collection binding temporarily suppresses completion delivery", () => {
+	const f = fixture();
+	f.generation.activeCollectionCount = 1;
+	f.fire("session_start");
+	f.flush();
+	assert.equal(f.sent.length, 0);
+	assert.equal(f.notified.length, 0);
+
+	f.generation.activeCollectionCount = 0;
+	f.update("activeCollection");
+	f.flush();
+	assert.equal(f.sent.length, 1);
+	assert.equal(f.notified.length, 1);
 	f.notifier.unsubscribe();
 });
 
@@ -382,14 +442,14 @@ test("context reconciliation hides a completion while a lifecycle tool claims it
 	f.notifier.unsubscribe();
 });
 
-test("joined descendants stay silent while detached descendants remain eligible", () => {
+test("model-collected descendants stay silent while detached descendants remain eligible", () => {
 	const f = fixture();
-	f.generation.joined = true;
+	f.generation.receipts.model = true;
 	const detached: any = {
 		generation: 1,
 		createdAt: 1,
-		observerCount: 0,
-		joined: false,
+		activeCollectionCount: 0,
+		receipts: { user: false, model: false },
 		status: { kind: "done", outcome: "completed", completedAt: 2 },
 	};
 	f.conversations.push({
@@ -408,12 +468,12 @@ test("joined descendants stay silent while detached descendants remain eligible"
 
 test("reconciliation resolves the latest execution for a resumed subagent", () => {
 	const f = fixture();
-	f.generation.joined = true;
+	f.generation.receipts.model = true;
 	const resumed: any = {
 		generation: 2,
 		createdAt: 3,
-		observerCount: 0,
-		joined: false,
+		activeCollectionCount: 0,
+		receipts: { user: false, model: false },
 		status: { kind: "done", outcome: "completed", completedAt: 4 },
 	};
 	f.conversations[0].generations.push(resumed);
@@ -454,12 +514,12 @@ test("successive generations retain exact completion correlation", () => {
 		action: "inspect",
 		subagentIds: ["calm-river"],
 	});
-	f.generation.joined = true;
+	f.generation.receipts.model = true;
 	f.conversations[0].generations.push({
 		generation: 2,
 		createdAt: 3,
-		observerCount: 0,
-		joined: false,
+		activeCollectionCount: 0,
+		receipts: { user: false, model: false },
 		status: { kind: "done", outcome: "completed", completedAt: 4 },
 	});
 	f.notifier.completeTool("root", "inspect-first-generation", {
@@ -487,12 +547,12 @@ for (const action of ["inspect", "cancel"] as const) {
 			action,
 			subagentIds: ["calm-river"],
 		});
-		f.generation.joined = true;
+		f.generation.receipts.model = true;
 		const resumed: any = {
 			generation: 2,
 			createdAt: 3,
-			observerCount: 0,
-			joined: false,
+			activeCollectionCount: 0,
+			receipts: { user: false, model: false },
 			status: {
 				kind: "done",
 				outcome: action === "cancel" ? "aborted" : "completed",
@@ -519,12 +579,12 @@ for (const action of ["inspect", "cancel"] as const) {
 		f.flush();
 		assert.equal(f.sent.length, 0);
 
-		resumed.joined = true;
+		resumed.receipts.model = true;
 		f.conversations[0].generations.push({
 			generation: 3,
 			createdAt: 5,
-			observerCount: 0,
-			joined: false,
+			activeCollectionCount: 0,
+			receipts: { user: false, model: false },
 			status: { kind: "done", outcome: "completed", completedAt: 6 },
 		});
 		f.fire("turn_end");
@@ -548,12 +608,12 @@ test("old completion messages do not rebound to a later execution", () => {
 		customType: "subagent-completion",
 		...f.sent[0].message,
 	};
-	f.generation.joined = true;
+	f.generation.receipts.model = true;
 	f.conversations[0].generations.push({
 		generation: 2,
 		createdAt: 3,
-		observerCount: 0,
-		joined: false,
+		activeCollectionCount: 0,
+		receipts: { user: false, model: false },
 		status: { kind: "done", outcome: "completed", completedAt: 4 },
 	});
 
@@ -570,12 +630,12 @@ test("old completion messages do not rebound when resumed generations share a co
 		customType: "subagent-completion",
 		...f.sent[0].message,
 	};
-	f.generation.joined = true;
+	f.generation.receipts.model = true;
 	f.conversations[0].generations.push({
 		generation: 2,
 		createdAt: 3,
-		observerCount: 0,
-		joined: false,
+		activeCollectionCount: 0,
+		receipts: { user: false, model: false },
 		status: { kind: "done", outcome: "completed", completedAt: 2 },
 	});
 
@@ -590,7 +650,7 @@ test("none mode and joined generations are ineligible", () => {
 	assert.equal(none.sent.length, 0);
 	none.notifier.unsubscribe();
 	const joined = fixture();
-	joined.generation.joined = true;
+	joined.generation.receipts.model = true;
 	joined.fire("session_start");
 	joined.flush();
 	assert.equal(joined.sent.length, 0);
@@ -736,8 +796,8 @@ test("finalized results cannot mark unclaimed generations observed", () => {
 	const unrelated: any = {
 		generation: 1,
 		createdAt: 1,
-		observerCount: 0,
-		joined: false,
+		activeCollectionCount: 0,
+		receipts: { user: false, model: false },
 		status: { kind: "done", outcome: "completed", completedAt: 2 },
 	};
 	f.conversations.push({
@@ -973,8 +1033,8 @@ test("later completions do not restart the first completion's grace deadline", (
 	const second: any = {
 		generation: 1,
 		createdAt: 1,
-		observerCount: 0,
-		joined: false,
+		activeCollectionCount: 0,
+		receipts: { user: false, model: false },
 		status: { kind: "running", startedAt: 1 },
 	};
 	f.generation.status = { kind: "running", startedAt: 1 };
@@ -1013,8 +1073,8 @@ test("coalesces completions that settle during the same grace window", () => {
 	const second: any = {
 		generation: 1,
 		createdAt: 1,
-		observerCount: 0,
-		joined: false,
+		activeCollectionCount: 0,
+		receipts: { user: false, model: false },
 		status: { kind: "running", startedAt: 1 },
 	};
 	f.generation.status = { kind: "running", startedAt: 1 };
@@ -1100,7 +1160,7 @@ test("successful join remains suppressed after its claim is released", () => {
 	});
 	f.fire("session_start");
 	f.flush();
-	f.generation.joined = true;
+	f.generation.receipts.model = true;
 	f.fire("tool_execution_end", {
 		toolCallId: "join-joined",
 		toolName: "subagent",
@@ -1122,10 +1182,10 @@ test("join claim remains active through observer changes until tool execution en
 	f.fire("session_start");
 	f.flush();
 	assert.equal(f.sent.length, 0);
-	f.generation.observerCount = 1;
+	f.generation.activeCollectionCount = 1;
 	f.update("observer");
 	f.flush();
-	f.generation.observerCount = 0;
+	f.generation.activeCollectionCount = 0;
 	f.update("observer");
 	f.flush();
 	assert.equal(f.sent.length, 0);

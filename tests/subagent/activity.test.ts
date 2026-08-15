@@ -131,7 +131,7 @@ test("conversation cost spans resumed generations and retains terminal usage", a
 	conversation.bindSession(first, events.session);
 	events.emit(assistantUsage(usage(100, 0.01)));
 	conversation.settle(first, "completed");
-	conversation.markJoined(first);
+	conversation.markCollected(first, "model");
 
 	const second = conversation.beginResume("second");
 	conversation.bindSession(second, events.session);

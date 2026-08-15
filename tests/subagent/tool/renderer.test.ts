@@ -38,7 +38,7 @@ describe("subagent result renderer", () => {
 			"helper.*project",
 		));
 
-	it("renders list", () =>
+	it("renders list with model collection state", () =>
 		expectViews(
 			{
 				response: {
@@ -49,6 +49,7 @@ describe("subagent result renderer", () => {
 							agent: "helper",
 							label: "Worker",
 							status: "running",
+							collected: false,
 							actionHints: [],
 							descendants: [],
 						},
@@ -56,7 +57,7 @@ describe("subagent result renderer", () => {
 				},
 			},
 			"Found 1 subagent",
-			"Worker.*running",
+			"Worker.*running[\\s\\S]*not collected",
 		));
 
 	it("renders spawn", () =>
