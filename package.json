@@ -27,8 +27,7 @@
 	"pi": {
 		"extensions": [
 			"extensions/*.ts",
-			"extensions/*/index.ts",
-			"!extensions/codex-usage-status.ts"
+			"extensions/*/index.ts"
 		],
 		"prompts": [
 			"prompts"
