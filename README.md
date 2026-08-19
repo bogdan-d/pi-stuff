@@ -20,6 +20,7 @@ pi-stuff/
 ├── deprecated-extensions/ # disabled implementations, including plan-mode
 ├── tests/                # extension tests and shared test helpers
 ├── prompts/              # prompt templates (.md) — package resource
+├── skills/               # Agent Skills — package resources
 └── themes/               # themes (.json) — package resource
 ```
 
@@ -59,11 +60,12 @@ plan widget. Its tests live under `tests/todo/`.
 The former flat sample extension is kept as
 `deprecated-extensions/todo_deprecated.ts` for reference.
 
-## Prompts & themes
+## Skills, prompts & themes
 
-`prompts/*.md` and `themes/*.json` are served directly by the package
-(declared in the `pi` manifest). Edit them here and `/reload` — Pi picks them
-up. No copy to `~/.pi/agent` is needed; the package is the single source.
+`skills/`, `prompts/*.md`, and `themes/*.json` are served directly by the
+package (declared in the `pi` manifest). Edit them here and `/reload` — Pi
+picks them up. No copy to `~/.pi/agent` is needed; the package is the single
+source.
 
 ## Agents
 
@@ -82,7 +84,7 @@ root):
   "extensions": ["./extensions/*.ts", "./extensions/*/index.ts"],
   "prompts":    ["./prompts"],
   "themes":     ["./themes"],
-  "skills":     ["./skills"]   // optional, not used here
+  "skills":     ["./skills"]
 }
 ```
 
