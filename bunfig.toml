@@ -1,0 +1,21 @@
+# When `true`, reduce memory usage at the cost of performance
+smol = false
+telemetry = false
+# env = false
+
+[install]
+linker = "isolated"
+ignoreScripts = true
+# Only install package versions published at least 1 day ago
+minimumReleaseAge = 86400
+
+[test]
+root = "./tests"
+
+[console]
+depth = 3
+
+[run]
+# equivalent to `bun --bun` for all `bun run` commands
+bun = true
+noOrphans = true
