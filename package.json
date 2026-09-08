@@ -27,7 +27,8 @@
 	"pi": {
 		"extensions": [
 			"extensions/*.ts",
-			"extensions/*/index.ts"
+			"extensions/*/index.ts",
+			"!extensions/ask/*.ts"
 		],
 		"prompts": [
 			"prompts"
@@ -36,7 +37,8 @@
 			"themes"
 		],
 		"skills": [
-			"skills"
+			"skills",
+			"!skills/chrome-cdp"
 		]
 	},
 	"peerDependencies": {
