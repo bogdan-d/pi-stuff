@@ -5,6 +5,7 @@ telemetry = false
 
 [install]
 linker = "isolated"
+globalStore = true
 ignoreScripts = true
 # Only install package versions published at least 1 day ago
 minimumReleaseAge = 86400
