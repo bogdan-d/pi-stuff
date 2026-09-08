@@ -1,0 +1,8 @@
+{
+	"name": "pi-playwright-podman",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@playwright/cli": "0.1.19"
+	}
+}

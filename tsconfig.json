@@ -28,5 +28,5 @@
 		"stableTypeOrdering": true,
 		"libReplacement": false
 	},
-	"include": ["extensions/**/*.ts"]
+	"include": ["extensions/**/*.ts", "skills/playwright-podman/tool/*.ts"]
 }

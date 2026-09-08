@@ -1,0 +1,10 @@
+{
+	"browser": {
+		"browserName": "chromium",
+		"launchOptions": {
+			"channel": "chromium",
+			"chromiumSandbox": true
+		}
+	},
+	"outputMode": "file"
+}

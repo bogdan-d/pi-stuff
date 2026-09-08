@@ -1,0 +1,11 @@
+FROM mcr.microsoft.com/playwright:v1.63.0-noble@sha256:bc6ab0d6d44ff4826e4cb8c1e6d801e185bfc42bb0753f8e2a30efc70db054c7
+WORKDIR /opt/playwright-cli
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts --no-audit --no-fund \
+    && ./node_modules/.bin/playwright install chromium
+ENV PATH="/opt/playwright-cli/node_modules/.bin:${PATH}"
+RUN mkdir -p /work/.playwright && chown -R pwuser:pwuser /work
+COPY cli.config.json /work/.playwright/cli.config.json
+USER pwuser
+WORKDIR /work
+CMD ["sleep", "infinity"]
