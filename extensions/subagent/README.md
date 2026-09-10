@@ -75,6 +75,12 @@ Running work can be inspected without interrupting it. Pi can also steer a subag
 
 Subagents can delegate work to children of their own. Ownership follows the delegation tree, and concurrency is shared across the entire tree so nested work follows the same limits as top-level work.
 
+### Skills
+
+Every subagent has a child-only `load_skill` tool that accepts one exact skill name. The catalog is deliberately omitted from child prompts; a parent must provide the name. Skills marked `disable-model-invocation` return the same unknown-skill result as an absent name, while agent-definition and spawn `skills` lists may still explicitly preload their full bodies into the child system prompt. Loaded skill references remain ordinary filesystem paths.
+
+The first child inherits the main session's effective skill metadata, including configured, package, CLI, and `resources_discover` additions that Pi reports at `before_agent_start`. Nested and resumed children retain that catalog. A child started in another cwd also discovers Pi's default, settings, and package paths for that cwd. Pi's SDK does not expose the original CLI `--skill` paths or re-run dynamic resource discovery as a standalone catalog operation, so cwd-dependent CLI/dynamic additions are inherited from the parent snapshot rather than recalculated for the child's cwd. Catalog changes made after a child is created apply to later spawns, not that retained conversation.
+
 ### Results, receipts, and cleanup
 
 Each generation has separate user and model collection receipts. The model's `join` action records only the model receipt; selecting a conversation in `/subagents` records only the user receipt, immediately for a terminal generation or when selected active work later becomes terminal. There is no separate **Collect** button. Every final result returned by `join` includes `output`, using `null` when the generation produced no text.

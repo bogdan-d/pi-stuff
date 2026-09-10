@@ -27,10 +27,13 @@ import {
 } from "./conversation.js";
 import {
 	discoverInheritedSkillPaths,
-	type GenerationExecutionResolution,
+	discoverSkillCatalog,
+	loadSkillFromCatalog,
+	mergeSkillCatalogs,
 	resolveModel,
-	resolveRequestedSkills,
+	resolveRequestedSkillsFromCatalog,
 	resolveTaskCwd,
+	type SkillCatalog,
 } from "./execute.js";
 import {
 	type ConversationId,
@@ -122,8 +125,6 @@ interface BoundRecord {
 	readonly binding: GenerationBinding;
 }
 type Reservation = GenerationRecord | { readonly error: string };
-type SkillCatalog = GenerationExecutionResolution<readonly string[]>;
-
 /** Owns retained conversations. Generations are addressed internally by their object identity. */
 export class SubagentRuntime {
 	private readonly conversations = new Map<ConversationId, Conversation>();
@@ -136,6 +137,11 @@ export class SubagentRuntime {
 	private readonly conversationIds = new ConversationIdAllocator();
 	private readonly executionScheduler: GenerationScheduler;
 	private readonly skillCatalogs = new Map<string, SkillCatalog>();
+	private readonly effectiveSkillCatalogs = new Map<string, SkillCatalog>();
+	private readonly conversationSkillCatalogs = new WeakMap<
+		Conversation,
+		SkillCatalog
+	>();
 	readonly registry: AgentRegistry;
 	private maximumConversations: number;
 	private readonly cancellationSettlementMs: number;
@@ -180,17 +186,34 @@ export class SubagentRuntime {
 	async prepareSkillCatalog(cwd: string): Promise<void> {
 		const key = canonicalCwd(cwd);
 		try {
-			this.skillCatalogs.set(key, {
-				ok: true,
-				value: await this.loadSkillPaths(key),
-			});
+			this.skillCatalogs.set(
+				key,
+				discoverSkillCatalog(key, undefined, await this.loadSkillPaths(key)),
+			);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			this.skillCatalogs.set(key, {
-				ok: false,
+				skills: [],
 				error: `Could not discover requested skills: ${message}`,
 			});
 		}
+	}
+	setEffectiveSkillCatalog(cwd: string, skills: SkillCatalog["skills"]): void {
+		this.effectiveSkillCatalogs.set(canonicalCwd(cwd), { skills: [...skills] });
+	}
+	loadChildSkill(
+		conversation: Conversation,
+		name: string,
+	): ReturnType<typeof loadSkillFromCatalog> {
+		const catalog = this.conversationSkillCatalogs.get(conversation);
+		if (!catalog) return { ok: false, error: "Skill catalog is unavailable." };
+		if (
+			catalog.skills.some(
+				(skill) => skill.name === name && skill.disableModelInvocation,
+			)
+		)
+			return { ok: false, error: `Unknown skill: ${name}` };
+		return loadSkillFromCatalog(catalog, name);
 	}
 	async prepareTasks(
 		ctx: ExtensionContext,
@@ -202,7 +225,6 @@ export class SubagentRuntime {
 			const definition = this.registry.agents.get(task.agent);
 			if (!definition) continue;
 			const requested = resolveRequestedConfig(definition, task);
-			if ((requested.skills?.length ?? 0) === 0) continue;
 			const cwd = resolveTaskCwd(ctx.cwd, requested.cwd);
 			if (cwd.ok) cwds.add(canonicalCwd(cwd.value));
 		}
@@ -333,19 +355,19 @@ export class SubagentRuntime {
 		const cwd = resolveTaskCwd(ctx.cwd, requested.cwd);
 		if (!cwd.ok) return { error: cwd.error };
 		const requestedSkills = requested.skills ?? [];
-		const skillCatalog = this.skillCatalogs.get(canonicalCwd(cwd.value));
-		const skills =
-			requestedSkills.length === 0
-				? { ok: true as const, value: [] }
-				: skillCatalog?.ok
-					? resolveRequestedSkills(
-							cwd.value,
-							requestedSkills,
-							undefined,
-							skillCatalog.value,
-						)
-					: (skillCatalog ??
-						resolveRequestedSkills(cwd.value, requestedSkills));
+		const discoveredCatalog =
+			this.skillCatalogs.get(canonicalCwd(cwd.value)) ??
+			discoverSkillCatalog(cwd.value);
+		const inheritedCatalog = caller
+			? this.conversationSkillCatalogs.get(caller.conversation)
+			: this.effectiveSkillCatalogs.get(canonicalCwd(ctx.cwd));
+		const skillCatalog = inheritedCatalog
+			? mergeSkillCatalogs(inheritedCatalog, discoveredCatalog)
+			: discoveredCatalog;
+		const skills = resolveRequestedSkillsFromCatalog(
+			requestedSkills,
+			skillCatalog,
+		);
 		if (!skills.ok) return { error: skills.error };
 		if (this.conversations.size >= this.maxConversations)
 			return { error: this.capacityError() };
@@ -367,6 +389,7 @@ export class SubagentRuntime {
 				initiatedBy,
 			},
 		);
+		this.conversationSkillCatalogs.set(conversation, skillCatalog);
 		this.conversations.set(conversationId, conversation);
 		return { conversation, generation: conversation.latestGeneration };
 	}

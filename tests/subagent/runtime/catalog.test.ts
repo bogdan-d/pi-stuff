@@ -1117,6 +1117,91 @@ test("spawn resolves requested skills from prepared package paths", async () => 
 	await batch.completion;
 });
 
+test("effective skill catalog remains available to resumed and nested children", async () => {
+	const root = await mkdtemp(path.join(tmpdir(), "subagent-inherited-skill-"));
+	const skillDir = path.join(root, "inherited-skill");
+	const skillFile = path.join(skillDir, "SKILL.md");
+	await mkdir(skillDir, { recursive: true });
+	await writeFile(
+		skillFile,
+		"---\nname: inherited-skill\ndescription: Inherited test skill.\n---\nInherited instructions.\n",
+	);
+	const inheritedSkill = {
+		name: "inherited-skill",
+		description: "Inherited test skill.",
+		filePath: skillFile,
+		baseDir: skillDir,
+		disableModelInvocation: false,
+	} as any;
+	const loaded: string[] = [];
+	let manager!: SubagentRuntime;
+	manager = new SubagentRuntime(
+		registry,
+		2,
+		async (_ctx, agent, generation) => {
+			const skill = manager.loadChildSkill(agent, "inherited-skill");
+			expect(skill.ok).toBe(true);
+			if (skill.ok) loaded.push(skill.value);
+			const activeSession =
+				generation.kind === "resume" ? agent.sessionForResume() : session();
+			agent.bindSession(generation, activeSession);
+			return completedGeneration(agent, generation, generation.prompt);
+		},
+	);
+	manager.setEffectiveSkillCatalog(root, [inheritedSkill]);
+
+	const ownerStart = manager.startTasks({ ...ctx, cwd: root }, [
+		{ kind: "spawn", agent: "worker", prompt: "owner", label: "owner" },
+	]);
+	await ownerStart.completion;
+	const owner = ownerStart.starts[0] as any;
+	const ownerCaller = manager.generationCaller(owner);
+
+	const childStart = manager.startTasks(
+		{ ...ctx, cwd: root },
+		[{ kind: "spawn", agent: "worker", prompt: "child", label: "child" }],
+		{ caller: ownerCaller },
+	);
+	await childStart.completion;
+
+	joinLatest(manager, owner.conversationId);
+	const resumed = manager.startTasks({ ...ctx, cwd: root }, [
+		{ kind: "resume", subagentId: owner.conversationId, prompt: "again" },
+	]);
+	await resumed.completion;
+
+	expect(loaded).toHaveLength(3);
+	expect(loaded).toEqual(
+		loaded.map(() =>
+			expect.stringContaining('<skill name="inherited-skill" location='),
+		),
+	);
+});
+
+test("child skill loading hides disable-model-invocation catalog entries", async () => {
+	const hiddenSkill = {
+		name: "hidden-skill",
+		description: "Hidden test skill.",
+		filePath: "/skills/hidden/SKILL.md",
+		baseDir: "/skills/hidden",
+		disableModelInvocation: true,
+	} as any;
+	const manager = new SubagentRuntime(registry, 1, executor);
+	manager.setEffectiveSkillCatalog(ctx.cwd, [hiddenSkill]);
+	const started = manager.startTasks(ctx, [
+		{ kind: "spawn", agent: "worker", prompt: "work", label: "work" },
+	]);
+	await started.completion;
+	const reference = started.starts[0] as any;
+
+	expect(
+		manager.loadChildSkill(
+			manager.generationCaller(reference).conversation,
+			"hidden-skill",
+		),
+	).toEqual({ ok: false, error: "Unknown skill: hidden-skill" });
+});
+
 test("model collection marks the exact latest result and unlocks model-initiated resume", async () => {
 	const manager = new SubagentRuntime(registry, 1, executor);
 	const initial = manager.startTasks(ctx, [

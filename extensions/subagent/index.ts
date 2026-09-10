@@ -32,6 +32,7 @@ import {
 	type SubagentSettings,
 	SubagentSettingsStore,
 } from "./settings.js";
+import { makeChildSkillTool } from "./skill-tool.js";
 import { timingAsync } from "./timing.js";
 import { defineSubagentTool, makeChildSubagentTool } from "./tool.js";
 import {
@@ -87,14 +88,15 @@ export default function subagentExtension(
 	pi.on("context", (event) => ({
 		messages: completionNotifier.reconcileMessages(event.messages),
 	}));
-	runtime.scheduler.setChildTool((parent) =>
+	runtime.scheduler.setChildTools((parent) => [
 		makeChildSubagentTool({
 			runtime,
 			agentRegistry,
 			parent,
 			getCurrentSettings,
 		}),
-	);
+		makeChildSkillTool(runtime, parent),
+	]);
 	runtime.scheduler.setChildSessionEvent((parent, generation, event) =>
 		completionNotifier.handleToolEvent(
 			`child:${parent.conversationId}:${generation.number}`,
@@ -105,6 +107,12 @@ export default function subagentExtension(
 	registerSubagentLifecycleEvents(pi.events, runtime);
 	registerSubagentMetadataPersistence(pi, runtime);
 	registerSubagentSessionGuards(pi as any, runtime);
+	pi.on("before_agent_start", (event) => {
+		runtime.setEffectiveSkillCatalog(
+			event.systemPromptOptions.cwd,
+			event.systemPromptOptions.skills ?? [],
+		);
+	});
 
 	registerSubagentsCommand(
 		pi,

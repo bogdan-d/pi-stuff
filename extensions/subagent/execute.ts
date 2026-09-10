@@ -91,7 +91,7 @@ export interface ExecuteGenerationDependencies {
 	loadSkills: typeof loadSkills;
 	readSkillFile: typeof readFileSync;
 	loadExtensionPaths: (cwd: string, agentDir: string) => Promise<string[]>;
-	childToolFor?: (agent: Conversation) => ToolDefinition;
+	childToolsFor?: (agent: Conversation) => readonly ToolDefinition[];
 	childSessionEvent?: (
 		agent: Conversation,
 		generation: Generation,
@@ -178,7 +178,7 @@ export async function executeGeneration(
 		cwd,
 		agentDir,
 	);
-	const childTool = dependencies.childToolFor?.(agent);
+	const childTools = dependencies.childToolsFor?.(agent) ?? [];
 
 	const resourceLoader = new dependencies.ResourceLoader({
 		cwd,
@@ -207,12 +207,14 @@ export async function executeGeneration(
 		cwd,
 		agentDir,
 		resourceLoader,
-		customTools: childTool ? [childTool] : [],
+		customTools: [...childTools],
 		sessionManager,
 		settingsManager,
 		...(selectedModel ? { model: selectedModel } : {}),
 		...(requestedThinking ? { thinkingLevel: requestedThinking } : {}),
-		...(requestedConfig.tools ? { tools: [...requestedConfig.tools] } : {}),
+		...(requestedConfig.tools
+			? { tools: [...new Set([...requestedConfig.tools, "load_skill"])] }
+			: {}),
 	};
 	const { session } = await timingAsync(
 		"generation.createAgentSession",
@@ -336,6 +338,96 @@ type SkillResolutionDependencies = Pick<
 	"getAgentDir" | "loadSkills" | "readSkillFile"
 >;
 
+export interface SkillCatalog {
+	readonly skills: readonly Skill[];
+	readonly error?: string;
+}
+
+export function discoverSkillCatalog(
+	cwd: string,
+	dependencies: SkillResolutionDependencies = DEFAULT_EXECUTE_GENERATION_DEPENDENCIES,
+	skillPaths: readonly string[] = [],
+): SkillCatalog {
+	try {
+		const agentDir = dependencies.getAgentDir();
+		return {
+			skills: dependencies.loadSkills({
+				cwd,
+				agentDir,
+				skillPaths: [...skillPaths],
+				includeDefaults: true,
+			}).skills,
+		};
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return {
+			skills: [],
+			error: `Could not discover requested skills: ${message}`,
+		};
+	}
+}
+
+export function mergeSkillCatalogs(
+	...catalogs: readonly SkillCatalog[]
+): SkillCatalog {
+	const skills: Skill[] = [];
+	const names = new Set<string>();
+	for (const catalog of catalogs) {
+		for (const skill of catalog.skills) {
+			if (names.has(skill.name)) continue;
+			names.add(skill.name);
+			skills.push(skill);
+		}
+	}
+	const error = catalogs.find((catalog) => catalog.error)?.error;
+	return { skills, ...(error ? { error } : {}) };
+}
+
+export function loadSkillFromCatalog(
+	catalog: SkillCatalog,
+	name: string,
+	dependencies: Pick<
+		SkillResolutionDependencies,
+		"readSkillFile"
+	> = DEFAULT_EXECUTE_GENERATION_DEPENDENCIES,
+): GenerationExecutionResolution<string> {
+	const found = catalog.skills.find((skill) => skill.name === name);
+	if (!found)
+		return {
+			ok: false,
+			error: catalog.error ?? `Unknown skill: ${name}`,
+		};
+
+	try {
+		const content = dependencies.readSkillFile(found.filePath, "utf-8");
+		const body = stripFrontmatter(content).trim();
+		return {
+			ok: true,
+			value: `<skill name="${found.name}" location="${found.filePath}">\nReferences are relative to ${found.baseDir}.\n\n${body}\n</skill>`,
+		};
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return { ok: false, error: `Could not load requested skill: ${message}` };
+	}
+}
+
+export function resolveRequestedSkillsFromCatalog(
+	requestedSkills: readonly string[],
+	catalog: SkillCatalog,
+	dependencies: Pick<
+		SkillResolutionDependencies,
+		"readSkillFile"
+	> = DEFAULT_EXECUTE_GENERATION_DEPENDENCIES,
+): GenerationExecutionResolution<readonly string[]> {
+	const blocks: string[] = [];
+	for (const name of requestedSkills) {
+		const loaded = loadSkillFromCatalog(catalog, name, dependencies);
+		if (!loaded.ok) return loaded;
+		blocks.push(loaded.value);
+	}
+	return { ok: true, value: blocks };
+}
+
 export function resolveRequestedSkills(
 	cwd: string,
 	requestedSkills: readonly string[],
@@ -343,44 +435,11 @@ export function resolveRequestedSkills(
 	skillPaths: readonly string[] = [],
 ): GenerationExecutionResolution<readonly string[]> {
 	if (requestedSkills.length === 0) return { ok: true, value: [] };
-
-	let available: Skill[];
-	try {
-		const agentDir = dependencies.getAgentDir();
-		available = dependencies.loadSkills({
-			cwd,
-			agentDir,
-			skillPaths: [...skillPaths],
-			includeDefaults: true,
-		}).skills;
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return {
-			ok: false,
-			error: `Could not discover requested skills: ${message}`,
-		};
-	}
-
-	const matched: Skill[] = [];
-	for (const name of requestedSkills) {
-		const found = available.find((skill) => skill.name === name);
-		if (!found) return { ok: false, error: `Unknown skill: ${name}` };
-		matched.push({ ...found, disableModelInvocation: false });
-	}
-
-	try {
-		return {
-			ok: true,
-			value: matched.map((skill) => {
-				const content = dependencies.readSkillFile(skill.filePath, "utf-8");
-				const body = stripFrontmatter(content).trim();
-				return `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
-			}),
-		};
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return { ok: false, error: `Could not load requested skill: ${message}` };
-	}
+	return resolveRequestedSkillsFromCatalog(
+		requestedSkills,
+		discoverSkillCatalog(cwd, dependencies, skillPaths),
+		dependencies,
+	);
 }
 
 export function resolveTaskCwd(

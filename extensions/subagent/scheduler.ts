@@ -161,7 +161,9 @@ export class GenerationScheduler {
 		ExecutionQueueTask<GenerationSnapshot>
 	>();
 	private isTracked: (conversation: Conversation) => boolean;
-	private childTool?: (conversation: Conversation) => ToolDefinition;
+	private childTools?: (
+		conversation: Conversation,
+	) => readonly ToolDefinition[];
 	private childSessionEvent?: (
 		conversation: Conversation,
 		generation: Generation,
@@ -176,15 +178,17 @@ export class GenerationScheduler {
 			((ctx, conversation, generation, signal) =>
 				executeGeneration(ctx, conversation, generation, signal, {
 					...DEFAULT_EXECUTE_GENERATION_DEPENDENCIES,
-					...(this.childTool ? { childToolFor: this.childTool } : {}),
+					...(this.childTools ? { childToolsFor: this.childTools } : {}),
 					...(this.childSessionEvent
 						? { childSessionEvent: this.childSessionEvent }
 						: {}),
 				}));
 	}
 
-	setChildTool(fn: (conversation: Conversation) => ToolDefinition): void {
-		this.childTool = fn;
+	setChildTools(
+		fn: (conversation: Conversation) => readonly ToolDefinition[],
+	): void {
+		this.childTools = fn;
 	}
 	setChildSessionEvent(
 		fn: (

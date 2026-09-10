@@ -320,6 +320,7 @@ test("resolves requested skills and reports discovery and read failures", () => 
 		name: "review",
 		filePath: "/skills/review/SKILL.md",
 		baseDir: "/skills/review",
+		disableModelInvocation: true,
 	} as any;
 	const dependencies = {
 		getAgentDir: () => "/agent",
@@ -359,6 +360,96 @@ test("resolves requested skills and reports discovery and read failures", () => 
 		ok: false,
 		error: "Could not load requested skill: permission denied",
 	});
+});
+
+test("child startup keeps skill catalog hidden while preserving explicit preloads", async () => {
+	let loaderOptions: any;
+	let sessionOptions: any;
+	class ResourceLoader {
+		constructor(options: any) {
+			loaderOptions = options;
+		}
+		async reload() {}
+	}
+	const review = {
+		name: "review",
+		description: "Review metadata.",
+		filePath: "/skills/review/SKILL.md",
+		baseDir: "/skills/review",
+		disableModelInvocation: true,
+	} as any;
+	const hidden = {
+		name: "hidden-catalog-skill",
+		description: "Must not appear in the child prompt.",
+		filePath: "/skills/hidden/SKILL.md",
+		baseDir: "/skills/hidden",
+	} as any;
+	const agent = new Conversation(
+		"amber-acorn" as any,
+		{
+			...config,
+			systemPrompt: "Worker prompt.",
+			skills: ["review"],
+			tools: ["read"],
+		},
+		{ kind: "spawn", agent: "worker", prompt: "work", label: "work" },
+		() => {},
+	);
+	const result = await executeGeneration(
+		{
+			cwd: "/work",
+			model: model("test", "known"),
+			modelRegistry: registry(model("test", "known")),
+		} as any,
+		agent,
+		agent.latestGeneration,
+		undefined,
+		{
+			...DEFAULT_EXECUTE_GENERATION_DEPENDENCIES,
+			ResourceLoader: ResourceLoader as any,
+			getAgentDir: () => "/agent",
+			loadSkills: () => ({ skills: [review, hidden] }),
+			readSkillFile: () =>
+				"---\nname: review\ndescription: Review metadata.\n---\nReview instructions.",
+			loadExtensionPaths: async () => [],
+			childToolsFor: () => [
+				{ name: "subagent" } as any,
+				{ name: "load_skill" } as any,
+			],
+			createAgentSession: async (options: any) => {
+				sessionOptions = options;
+				return {
+					session: {
+						model: model("test", "known"),
+						thinkingLevel: "medium",
+						messages: [
+							{
+								role: "assistant",
+								content: [{ type: "text", text: "done" }],
+							},
+						],
+						subscribe: () => () => {},
+						prompt: async () => {},
+						abort: async () => {},
+						getActiveToolNames: () => ["subagent", "load_skill"],
+					} as any,
+					extensionsResult: {} as any,
+				};
+			},
+		} as any,
+	);
+
+	expect(result.status).toMatchObject({ kind: "done", outcome: "completed" });
+	expect(loaderOptions.noSkills).toBe(true);
+	const systemPrompt = loaderOptions.systemPromptOverride();
+	expect(systemPrompt).toContain("Review instructions.");
+	expect(systemPrompt).not.toContain("hidden-catalog-skill");
+	expect(systemPrompt).not.toContain("Must not appear");
+	expect(sessionOptions.customTools.map((tool: any) => tool.name)).toEqual([
+		"subagent",
+		"load_skill",
+	]);
+	expect(sessionOptions.tools).toEqual(["read", "load_skill"]);
 });
 
 test("resolves and validates relative and absolute requested working directories", async () => {

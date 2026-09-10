@@ -82,8 +82,9 @@ test("extension reconciles current completion messages at the provider context b
 test("loading settings for a tool invocation refreshes the visible widget", async () => {
 	let tool: any;
 	const runtime = {
-		scheduler: { setChildTool: mock(), setChildSessionEvent: mock() },
+		scheduler: { setChildTools: mock(), setChildSessionEvent: mock() },
 		configure: mock(),
+		setEffectiveSkillCatalog: mock(),
 		listConversations: () => [
 			fakeAgent({ status: { kind: "running", startedAt: 1 } }),
 		],
@@ -116,4 +117,39 @@ test("loading settings for a tool invocation refreshes the visible widget", asyn
 	expect(setWidget).toHaveBeenCalledWith("subagent", expect.any(Function), {
 		placement: "belowEditor",
 	});
+});
+
+test("captures effective skill metadata without adding it to child prompts", () => {
+	const handlers = new Map<string, (event: any) => void>();
+	const setEffectiveSkillCatalog = mock();
+	const runtime = {
+		scheduler: { setChildTools: mock(), setChildSessionEvent: mock() },
+		setEffectiveSkillCatalog,
+		listConversations: () => [],
+		onConversationUpdate: () => () => {},
+	};
+	subagentExtension(
+		{
+			on: (event: string, handler: (event: any) => void) => {
+				handlers.set(event, handler);
+			},
+			registerTool: mock(),
+			registerCommand: mock(),
+		} as any,
+		{
+			runtime: runtime as any,
+			agentRegistry: { agents: new Map() } as any,
+			settingsStore: {
+				load: async () => ({ settings: createDefaultSubagentSettings() }),
+				save: async () => {},
+			},
+		},
+	);
+	const skills = [{ name: "dynamic-skill", description: "hidden" }];
+
+	handlers.get("before_agent_start")?.({
+		systemPromptOptions: { cwd: "/work", skills },
+	});
+
+	expect(setEffectiveSkillCatalog).toHaveBeenCalledWith("/work", skills);
 });
