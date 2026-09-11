@@ -5,6 +5,9 @@ export interface TranscriptEntry {
 	readonly body: string;
 	readonly toolCallId?: string;
 	readonly running?: boolean;
+	readonly parentToolCallId?: string;
+	readonly isError?: boolean;
+	readonly thinking?: string;
 }
 
 /** Generation-local history, independent of the SDK's compactable context. */
@@ -26,8 +29,23 @@ export class GenerationTranscript {
 			const entry = {
 				title: event.message.role,
 				body: formatPayload(
-					"content" in event.message ? event.message.content : event.message,
+					event.message.role === "assistant"
+						? event.message.content.filter(
+								(block) =>
+									block.type !== "toolCall" && block.type !== "thinking",
+							)
+						: "content" in event.message
+							? event.message.content
+							: event.message,
 				),
+				...(event.message.role === "assistant"
+					? {
+							thinking: event.message.content
+								.filter((block) => block.type === "thinking")
+								.map((block) => block.thinking)
+								.join("\n"),
+						}
+					: {}),
 			};
 			if (event.type === "message_start" || this.messageIndex === undefined) {
 				this.messageIndex = this.entries.length;
@@ -65,6 +83,8 @@ export class GenerationTranscript {
 				...this.entries,
 				{
 					title: `${event.toolName} · ${event.toolCallId} · ${event.type === "tool_execution_update" ? "progress" : event.isError ? "error" : "result"}`,
+					parentToolCallId: event.toolCallId,
+					isError: event.type === "tool_execution_end" && event.isError,
 					body: formatPayload(
 						event.type === "tool_execution_update"
 							? event.partialResult

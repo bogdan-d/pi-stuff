@@ -60,6 +60,28 @@ test("streamed assistant messages update in place and survive subsequent message
 	]);
 });
 
+test("assistant tool JSON is omitted while text and collapsible thinking survive", () => {
+	const trace = new GenerationTranscript();
+	trace.record({
+		type: "message_end",
+		message: {
+			role: "assistant",
+			content: [
+				{ type: "text", text: "Checking files" },
+				{ type: "thinking", thinking: "private reasoning" },
+				{
+					type: "toolCall",
+					id: "a",
+					name: "read",
+					arguments: { path: "file" },
+				},
+			],
+		},
+	} as AgentSessionEvent);
+	expect(trace.snapshot()[0]?.body).toBe("Checking files");
+	expect(trace.snapshot()[0]?.thinking).toBe("private reasoning");
+});
+
 test("both modal modes follow live traces and preserve a scrolled reading position", () => {
 	let entries = Array.from({ length: 60 }, (_, index) => ({
 		title: `tool-${index}`,

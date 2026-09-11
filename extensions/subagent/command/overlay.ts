@@ -47,7 +47,7 @@ import {
 } from "./settings.js";
 
 export type SubagentOverlayPage = "conversations" | "agents" | "settings";
-type FocusRegion = "list" | "filter" | "prompt";
+type FocusRegion = "list" | "filter" | "prompt" | "trace";
 type InspectorContent = string[] | { header: string[]; details: string[] };
 type PromptTarget =
 	| { kind: "agent"; name: string }
@@ -96,6 +96,11 @@ export class SubagentOverlayComponent implements Component, Focusable {
 	private inspectorScrollOffset = 0;
 	private inspectorPageSize = 1;
 	private followTrace = true;
+	private traceItems: string[] = [];
+	private selectedTrace: string | undefined;
+	private revealTrace = false;
+	private readonly expandedTrace = new Map<string, boolean>();
+	private readonly traceHistory = new Set<string>();
 	private readonly traceCache = new WeakMap<
 		object,
 		{ width: number; lines: string[] }
@@ -192,6 +197,69 @@ export class SubagentOverlayComponent implements Component, Focusable {
 			this.requestRender();
 			return;
 		}
+		if (this.focusRegion === "trace") {
+			if (data === "\t" || isShiftTabKey(data)) {
+				this.detail = undefined;
+				this.setFocus("list");
+				this.switchPage(data === "\t" ? 1 : -1);
+			} else if (isCancelKey(data, this.keybindings)) {
+				this.detail = undefined;
+				this.selectedTrace = undefined;
+				this.setFocus("list");
+			} else if (
+				isUpKey(data, this.keybindings) ||
+				isDownKey(data, this.keybindings)
+			) {
+				const index = this.selectedTrace
+					? this.traceItems.indexOf(this.selectedTrace)
+					: -1;
+				this.selectedTrace =
+					this.traceItems[
+						clamp(
+							index < 0
+								? this.traceItems.length - 1
+								: index + (isUpKey(data, this.keybindings) ? -1 : 1),
+							0,
+							this.traceItems.length - 1,
+						)
+					];
+				this.followTrace = false;
+				this.revealTrace = true;
+			} else if (isEnterKey(data, this.keybindings) && this.selectedTrace) {
+				this.expandedTrace.set(
+					this.selectedTrace,
+					!this.expandedTrace.get(this.selectedTrace),
+				);
+				this.revealTrace = true;
+			} else if (data === "h" && this.selectedTrace) {
+				if (this.traceHistory.has(this.selectedTrace))
+					this.traceHistory.delete(this.selectedTrace);
+				else this.traceHistory.add(this.selectedTrace);
+				this.expandedTrace.set(this.selectedTrace, true);
+				this.revealTrace = true;
+			} else if (isPageUpKey(data, this.keybindings)) this.scrollInspector(-1);
+			else if (isPageDownKey(data, this.keybindings)) this.scrollInspector(1);
+			else if (data === "g") {
+				this.selectedTrace = undefined;
+				this.followTrace = true;
+				this.inspectorScrollOffset = Number.MAX_SAFE_INTEGER;
+			} else if (this.selectedConversationId) {
+				if (data === "c") this.cancelGeneration(this.selectedConversationId);
+				else if (data === "r")
+					this.openResumePrompt(this.selectedConversationId);
+				else if (data === "x")
+					this.removeConversation(this.selectedConversationId);
+			}
+			this.requestRender();
+			return;
+		}
+		if (data === "t" && this.page === "conversations") {
+			this.selectedTrace = this.traceItems.at(-1);
+			this.followTrace = false;
+			this.revealTrace = true;
+			this.setFocus("trace");
+			return;
+		}
 		if (this.detail) {
 			if (isPageUpKey(data, this.keybindings)) {
 				this.scrollInspector(-1);
@@ -274,6 +342,7 @@ export class SubagentOverlayComponent implements Component, Focusable {
 	}
 
 	render(width: number): string[] {
+		this.traceItems = [];
 		const innerWidth = Math.max(1, width - 2);
 		const header = this.detail
 			? this.renderDetailTitle(innerWidth)
@@ -656,7 +725,42 @@ export class SubagentOverlayComponent implements Component, Focusable {
 	}
 
 	private renderTrace(generation: GenerationSnapshot, width: number): string[] {
-		return (generation.activity.transcript ?? []).flatMap((entry) => {
+		const transcript = generation.activity.transcript ?? [];
+		return transcript.flatMap((entry, index) => {
+			if (entry.parentToolCallId) return [];
+			const key = `${this.selectedConversationId}:${generation.generation}:${index}`;
+			const results = entry.toolCallId
+				? transcript.filter(
+						(result) => result.parentToolCallId === entry.toolCallId,
+					)
+				: [];
+			const expandable = Boolean(entry.toolCallId || entry.thinking);
+			if (expandable) {
+				this.traceItems.push(key);
+				if (
+					!this.expandedTrace.has(key) &&
+					results.some((result) => result.isError)
+				)
+					this.expandedTrace.set(key, true);
+			}
+			const expanded = this.expandedTrace.get(key) ?? false;
+			const selected =
+				this.focusRegion === "trace" && this.selectedTrace === key;
+			const marker = expandable
+				? `${selected ? "▶" : " "} ${expanded ? "▾" : "▸"} `
+				: "";
+			const title = entry.toolCallId
+				? `${entry.title.split(" · ")[0]} · ${entry.running ? (generation.status.kind === "done" ? "interrupted" : "running") : results.some((result) => result.isError) ? "error" : "done"}`
+				: entry.title;
+			if (entry.toolCallId && !expanded)
+				return [
+					truncateToWidth(
+						`${marker}${title} · ${compact(results.at(-1)?.body || entry.body)}`,
+						width,
+						"…",
+					),
+				];
+			if (!entry.body && !entry.thinking) return [];
 			let cached = this.traceCache.get(entry);
 			if (!cached || cached.width !== width) {
 				cached = {
@@ -670,10 +774,22 @@ export class SubagentOverlayComponent implements Component, Focusable {
 			}
 			return [
 				"",
-				this.accent(
-					`${entry.title}${entry.running ? (generation.status.kind === "done" ? " · interrupted" : " · running") : ""}`,
-				),
+				this.accent(`${marker}${title}${entry.thinking ? " · thinking" : ""}`),
 				...cached.lines,
+				...(expanded && entry.thinking
+					? wrapTextWithAnsi(entry.thinking, width)
+					: []),
+				...(expanded
+					? (this.traceHistory.has(key) ? results : results.slice(-1)).flatMap(
+							(result) => [
+								this.muted(result.title),
+								...wrapTextWithAnsi(
+									result.body.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, ""),
+									width,
+								),
+							],
+						)
+					: []),
 			];
 		});
 	}
@@ -796,6 +912,10 @@ export class SubagentOverlayComponent implements Component, Focusable {
 				conversationId: conversation.conversationId,
 				...(generation ? { generation: generation.generation } : {}),
 			};
+			this.setFocus("trace");
+			this.selectedTrace = this.traceItems.at(-1);
+			this.followTrace = false;
+			this.revealTrace = true;
 		} else if (data.toLowerCase() === "r")
 			this.openResumePrompt(conversation.conversationId);
 		else if (data.toLowerCase() === "c")
@@ -878,6 +998,7 @@ export class SubagentOverlayComponent implements Component, Focusable {
 	}
 
 	private moveSelection(delta: number): void {
+		this.selectedTrace = undefined;
 		this.followTrace = true;
 		this.inspectorScrollOffset = 0;
 		if (this.page === "agents") {
@@ -1031,6 +1152,11 @@ export class SubagentOverlayComponent implements Component, Focusable {
 			];
 		}
 		const lines = content;
+		if (this.revealTrace) {
+			const selected = lines.findIndex((line) => line.includes("▶"));
+			if (selected >= 0) this.inspectorScrollOffset = selected;
+			this.revealTrace = false;
+		}
 		this.inspectorPageSize = Math.max(1, height - 2);
 		const paddedLength = lines.length + (topPadding ? 1 : 0);
 		if (paddedLength <= height || height < 3) {
@@ -1055,7 +1181,8 @@ export class SubagentOverlayComponent implements Component, Focusable {
 		);
 		const above = this.inspectorScrollOffset;
 		const below = lines.length - this.inspectorScrollOffset - contentHeight;
-		if (below === 0 && this.page === "conversations") this.followTrace = true;
+		if (below === 0 && this.page === "conversations" && !this.selectedTrace)
+			this.followTrace = true;
 		return [
 			above ? this.muted(center(`▲ ${above} more above`, width)) : "",
 			...lines.slice(
@@ -1148,6 +1275,28 @@ export class SubagentOverlayComponent implements Component, Focusable {
 		return `${this.border("│")}${pad(content, width)}${this.border("│")}`;
 	}
 	private renderHelp(width: number): string[] {
+		if (this.focusRegion === "trace") {
+			const conversation = this.selectedConversationId
+				? this.findConversation(this.selectedConversationId)
+				: undefined;
+			const generation =
+				conversation &&
+				this.findGeneration(conversation, this.detail?.generation);
+			return [
+				...wrapTextWithAnsi(
+					this.accent(
+						"Trace · ↑↓ select · Enter expand · h progress history · PgUp/PgDn scroll · g follow · Tab pages · Esc back",
+					),
+					width,
+				),
+				...(conversation && generation
+					? wrapTextWithAnsi(
+							this.conversationActionHelp(conversation, generation, false),
+							width,
+						)
+					: []),
+			];
+		}
 		if (this.focusRegion === "prompt")
 			return [this.muted("enter submit · esc cancel")];
 		if (this.detail) {
@@ -1207,6 +1356,8 @@ export class SubagentOverlayComponent implements Component, Focusable {
 		includeInspect = true,
 	): string {
 		const actions: Array<[string, string]> = [];
+		if (includeInspect && generation.activity.transcript?.length)
+			actions.push(["t", "navigate trace"]);
 		if (includeInspect && generation.activity.transcript?.length)
 			actions.push(["g", "follow live"]);
 		if (includeInspect) actions.push(["enter", "inspect"]);

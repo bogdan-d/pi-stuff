@@ -1,6 +1,7 @@
 import { expect, mock, test } from "bun:test";
 import { SubagentOverlayComponent } from "../../../extensions/subagent/command/overlay.js";
 import { DEFAULT_SUBAGENT_SETTINGS } from "../../../extensions/subagent/settings.js";
+import { GenerationTranscript } from "../../../extensions/subagent/transcript.js";
 import { fakeAgent, fakeGeneration } from "../helpers/fake-agent.js";
 
 function overlayFixture(
@@ -94,6 +95,69 @@ function overlayFixture(
 		},
 	};
 }
+
+test("trace focus selects and expands calls without changing browser navigation", () => {
+	const trace = new GenerationTranscript();
+	trace.record({
+		type: "tool_execution_start",
+		toolName: "exec",
+		toolCallId: "a",
+		args: { command: "first-input" },
+	});
+	trace.record({
+		type: "tool_execution_update",
+		toolName: "exec",
+		toolCallId: "a",
+		args: {},
+		partialResult: "old-progress",
+	});
+	trace.record({
+		type: "tool_execution_end",
+		toolName: "exec",
+		toolCallId: "a",
+		isError: false,
+		result: "latest-result",
+	});
+	trace.record({
+		type: "tool_execution_start",
+		toolName: "read",
+		toolCallId: "b",
+		args: { path: "second-input" },
+	});
+	const generation = fakeGeneration({ status: { kind: "running" } });
+	const fixture = overlayFixture(
+		fakeAgent({
+			generations: [
+				{
+					...generation,
+					activity: { ...generation.activity, transcript: trace.snapshot() },
+				},
+			],
+		}),
+	);
+	const { component } = fixture;
+	const render = () => component.render(160).join("\n");
+	expect(render()).not.toContain("old-progress");
+	component.handleInput("t");
+	expect(render()).toContain("Trace ·");
+	component.handleInput("\x1b[A");
+	expect(render()).toContain("▶ ▸ exec");
+	component.handleInput("\r");
+	expect(render()).toContain("first-input");
+	expect(render()).not.toContain("old-progress");
+	component.handleInput("h");
+	expect(render()).toContain("old-progress");
+	component.handleInput("\r");
+	expect(render()).not.toContain("old-progress");
+	component.handleInput("\x1b");
+	expect(fixture.done).not.toHaveBeenCalled();
+	component.handleInput("\r");
+	expect(render()).toContain("Trace ·");
+	component.handleInput("\t");
+	expect(render()).toContain("Settings");
+	expect(render()).not.toContain("Trace ·");
+	component.dispose();
+});
 
 test("Ctrl+Alt+A closes the overlay", () => {
 	const { component, done } = overlayFixture();
