@@ -17,6 +17,7 @@ import type {
 import { resolveRequestedConfig, summarizeAgentDefinition } from "./agents.js";
 import type { ConversationId } from "./identifiers.js";
 import type { SpawnRequest } from "./schema.js";
+import type { TranscriptEntry } from "./transcript.js";
 
 export type GenerationKind = "spawn" | "resume";
 export type GenerationInitiator = "user" | "model";
@@ -99,6 +100,7 @@ export interface GenerationToolUse {
 	readonly inputSummary?: string;
 }
 export interface GenerationActivitySnapshot {
+	readonly transcript?: readonly TranscriptEntry[];
 	readonly phase: GenerationPhase;
 	readonly messageSnippet?: string;
 	readonly turns: number;

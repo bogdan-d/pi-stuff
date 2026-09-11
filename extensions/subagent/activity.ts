@@ -9,6 +9,7 @@ import type {
 	GenerationPhase,
 	GenerationToolUse,
 } from "./conversation.js";
+import { GenerationTranscript } from "./transcript.js";
 
 const DefaultUsage: Usage = {
 	input: 0,
@@ -30,6 +31,7 @@ const DefaultCost: Usage["cost"] = {
 export type GenerationActivityListener = (kind: ConversationUpdateKind) => void;
 
 export class GenerationActivity {
+	private readonly transcript = new GenerationTranscript();
 	private _message: string = "";
 	private _phase: GenerationPhase = "starting";
 	private _turns: number = 0;
@@ -66,6 +68,7 @@ export class GenerationActivity {
 
 	snapshot(): GenerationActivitySnapshot {
 		return {
+			transcript: this.transcript.snapshot(),
 			phase: this._phase,
 			...(this._message ? { messageSnippet: this._message } : {}),
 			turns: this._turns,
@@ -76,6 +79,7 @@ export class GenerationActivity {
 
 	subscribe(session: AgentSession): () => void {
 		return session.subscribe((event) => {
+			if (this.transcript.record(event)) this.onChange("message");
 			const phaseOverride = this.onSessionEvent?.(event);
 			if (event.type === "agent_end")
 				this._setPhase(event.willRetry ? "thinking" : "settling");
