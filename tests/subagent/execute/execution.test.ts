@@ -365,6 +365,7 @@ test("resolves requested skills and reports discovery and read failures", () => 
 test("child startup keeps skill catalog hidden while preserving explicit preloads", async () => {
 	let loaderOptions: any;
 	let sessionOptions: any;
+	let authReady = false;
 	class ResourceLoader {
 		constructor(options: any) {
 			loaderOptions = options;
@@ -420,6 +421,9 @@ test("child startup keeps skill catalog hidden while preserving explicit preload
 				sessionOptions = options;
 				return {
 					session: {
+						bindExtensions: async () => {
+							authReady = true;
+						},
 						model: model("test", "known"),
 						thinkingLevel: "medium",
 						messages: [
@@ -429,7 +433,9 @@ test("child startup keeps skill catalog hidden while preserving explicit preload
 							},
 						],
 						subscribe: () => () => {},
-						prompt: async () => {},
+						prompt: async () => {
+							expect(authReady).toBe(true);
+						},
 						abort: async () => {},
 						getActiveToolNames: () => ["subagent", "load_skill"],
 					} as any,

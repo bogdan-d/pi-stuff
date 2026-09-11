@@ -1,6 +1,6 @@
 {
 	"name": "pi-stuff",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Personal Pi coding agent extensions.",
 	"type": "module",
 	"private": true,

@@ -58,6 +58,21 @@ Selecting `default` restores Pi's own login without overwriting it. Switching
 is manual, with no automatic quota-based rotation. API-key accounts accept
 literal keys, not provider environment settings or ambient-only authentication.
 
+Interactive sessions remember your last-used provider, model, and thinking level
+in `~/.pi/agent/pi-accounts-selection.json`. Fresh sessions restore that choice
+after account authentication. Before a choice is remembered, the configured Pi
+default is used to recover an unknown startup model. Explicit CLI model choices
+take precedence. Resumed sessions keep their transcript selection, and reloading
+keeps the current model. Headless sessions use their assigned model and do not
+update interactive preferences. Concurrent interactive sessions share this file;
+the last selection or submitted turn wins.
+
+Standalone Pi login is not required for selected accounts. Pi 0.85.1 may still
+display its earlier "No models available" startup warning even after accounts
+restores a usable model. Failed restoration reports an error instead of selecting
+another account. The subagent extension initializes inherited extensions before
+prompting so accounts can supply authentication before Pi's preflight check.
+
 The extension is loaded automatically by the package's
 `extensions/*/index.ts` manifest entry. Its tests live under
 `tests/accounts/`.

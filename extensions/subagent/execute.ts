@@ -228,6 +228,26 @@ export async function executeGeneration(
 		() => dependencies.createAgentSession(sessionOptions),
 	);
 
+	// Loading extensions does not emit session_start. Auth must be ready before
+	// prompt() performs its preflight check, which precedes before_agent_start.
+	try {
+		let startupFailed = false;
+		await session.bindExtensions({
+			mode: "print",
+			onError: () => {
+				startupFailed = true;
+			},
+		});
+		if (startupFailed) throw new Error("Child extension startup failed.");
+	} catch (error) {
+		await session.extensionRunner.emit({
+			type: "session_shutdown",
+			reason: "quit",
+		});
+		session.dispose();
+		throw error;
+	}
+
 	const effectiveModel = session.model ?? selectedModel;
 	const effectiveThinking = session.thinkingLevel ?? requestedThinking;
 	const activeTools =
@@ -248,6 +268,11 @@ export async function executeGeneration(
 
 	if (signal?.aborted) {
 		await AbortSession(session);
+		await session.extensionRunner.emit({
+			type: "session_shutdown",
+			reason: "quit",
+		});
+		session.dispose();
 		return skippedGeneration(agent, generation);
 	}
 

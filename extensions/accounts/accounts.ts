@@ -25,6 +25,8 @@ import {
 	RuntimeAuthCoordinator,
 	redactTokenText,
 } from "./runtime-auth.js";
+import { registerSelectionMemory, type SelectionOptions } from "./selection.js";
+import { InMemoryAccountStorageBackend } from "./storage.js";
 
 export {
 	ACCOUNTS_FILE,
@@ -46,6 +48,7 @@ export const DEFAULT_PI_LOGIN_LABEL = "(default pi login)";
 
 export type AccountsDependencies = {
 	store?: AccountStore;
+	selection?: SelectionOptions;
 	providers?: readonly AccountProviderAdapter[];
 	closeCodexWebSockets?: (sessionId?: string) => unknown | Promise<unknown>;
 };
@@ -268,6 +271,17 @@ export default function accountsExtension(
 		);
 		setStatus(ctx, undefined);
 	});
+	registerSelectionMemory(
+		pi,
+		dependencies.selection ??
+			(dependencies.store
+				? {
+						storage: new InMemoryAccountStorageBackend(),
+						defaults: () => undefined,
+						args: {},
+					}
+				: {}),
+	);
 }
 
 function createAccountCommand(

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Remember the last-used interactive provider, model, and thinking level. Restore fresh sessions after accounts authentication, preserve explicit CLI choices and resumed session settings, and keep headless children from overwriting interactive preferences.
+- Recover the configured default model when no selection has been remembered and startup has no native Pi login. Pi's earlier startup warning can remain visible even after recovery.
+- Initialize subagent extensions before prompting so selected-account authentication is available during Pi's preflight check.
+
 ## 0.2.0
 
 - Save and switch between named API keys per provider through `/accounts`, including Z.AI for GLM. Discover API-key login providers from Pi and offer a method choice alongside supported OAuth logins.

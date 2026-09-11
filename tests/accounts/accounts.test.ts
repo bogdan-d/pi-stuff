@@ -256,6 +256,7 @@ test("accounts registers only the interactive /accounts command and lifecycle ho
 		"model_select",
 		"session_shutdown",
 		"session_start",
+		"thinking_level_select",
 		"turn_start",
 	]);
 });
