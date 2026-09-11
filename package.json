@@ -16,7 +16,7 @@
 	"engines": {
 		"node": ">=20.6.0"
 	},
-	"packageManager": "bun@1.3.14",
+	"packageManager": "bun@1.4.2",
 	"scripts": {
 		"check": "bun run lint && bun run typecheck && bun run test",
 		"test": "bun test",
@@ -48,15 +48,15 @@
 		"@earendil-works/pi-ai": ">=0.85.1",
 		"@earendil-works/pi-coding-agent": ">=0.85.1",
 		"@earendil-works/pi-tui": ">=0.85.1",
-		"typebox": ">=1.3.28"
+		"typebox": ">=1.3.30"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.12",
+		"@biomejs/biome": "^2.5.13",
 		"@earendil-works/pi-agent-core": "0.85.1",
 		"@earendil-works/pi-ai": "0.85.1",
 		"@earendil-works/pi-coding-agent": "0.85.1",
 		"@earendil-works/pi-tui": "0.85.1",
-		"@types/node": "^26.4.1",
+		"@types/node": "^26.5.1",
 		"@types/proper-lockfile": "^4.1.4",
 		"typescript": "^7.0.2"
 	},
