@@ -23,6 +23,7 @@ import {
 } from "./input.js";
 
 export type SubagentSettingsChange =
+	| { kind: "saveSessions"; value: boolean }
 	| { kind: "widgetPlacement"; value: WidgetPlacement }
 	| { kind: "widgetMode"; value: WidgetMode }
 	| { kind: "completionNotify"; value: CompletionNotifyMode }
@@ -36,6 +37,11 @@ export function applySubagentSettingsChange(
 	change: SubagentSettingsChange,
 ): SubagentSettings {
 	switch (change.kind) {
+		case "saveSessions":
+			return {
+				...settings,
+				runtime: { ...settings.runtime, saveSessions: change.value },
+			};
 		case "widgetPlacement":
 			return { ...settings, widgetPlacement: change.value };
 		case "widgetMode":
@@ -249,6 +255,11 @@ export class SubagentSettingsComponent implements Component, Focusable {
 	}
 
 	private renderPreview(item: SettingDefinition, width: number): string[] {
+		if (item.id === "saveSessions")
+			return wrapTextWithAnsi(
+				"Native Pi JSONL files. Open with pi --session <path>. Final messages and tool results are saved, not streaming updates. Files remain after removal. No automatic restoration into this modal.",
+				width,
+			).map((line) => this.muted(line));
 		if (item.id === "completionNotify")
 			return this.notificationPreview(item.currentValue, width);
 		if (item.id === "maxConcurrentSubagents") {
@@ -498,10 +509,20 @@ function createSettingDefinitions(
 			currentValue: String(settings.runtime.maxConversations),
 			description: "Maximum number of conversations retained by the runtime.",
 		},
+		{
+			id: "saveSessions",
+			section: "Runtime",
+			label: "Save sessions",
+			currentValue: settings.runtime.saveSessions ? "on" : "off",
+			values: ["off", "on"],
+			description:
+				"Save new subagent conversations to disk, including prompts and tool outputs. Existing conversations keep their storage mode through follow-ups. Files appear after the first finalized assistant message. Standalone continuation uses the current Pi environment.",
+		},
 	];
 }
 
 function settingChange(id: SettingId, value: string): SubagentSettingsChange {
+	if (id === "saveSessions") return { kind: id, value: value === "on" };
 	if (id === "widgetPlacement")
 		return { kind: id, value: value as WidgetPlacement };
 	if (id === "widgetMode") return { kind: id, value: value as WidgetMode };

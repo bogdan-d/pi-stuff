@@ -144,6 +144,7 @@ export class SubagentRuntime {
 	>();
 	readonly registry: AgentRegistry;
 	private maximumConversations: number;
+	private saveSessions = false;
 	private readonly cancellationSettlementMs: number;
 	private readonly loadSkillPaths: (cwd: string) => Promise<readonly string[]>;
 
@@ -176,10 +177,13 @@ export class SubagentRuntime {
 		return this.maximumConversations;
 	}
 	configure(options: {
+		saveSessions?: boolean;
 		maxExecuting?: number;
 		maxConversations?: number;
 	}): void {
 		this.executionScheduler.configure(options);
+		if (options.saveSessions !== undefined)
+			this.saveSessions = options.saveSessions;
 		if (options.maxConversations !== undefined)
 			this.maximumConversations = options.maxConversations;
 	}
@@ -386,6 +390,10 @@ export class SubagentRuntime {
 						}
 					: {}),
 				resolvedSkillBlocks: skills.value,
+				saveSessions: this.saveSessions,
+				rootSessionId:
+					caller?.conversation.rootSessionId ??
+					ctx.sessionManager?.getSessionId(),
 				initiatedBy,
 			},
 		);

@@ -637,6 +637,12 @@ export class SubagentOverlayComponent implements Component, Focusable {
 			...(conversation.effectiveConfig
 				? [this.tag("cwd", conversation.effectiveConfig.cwd)]
 				: []),
+			...(conversation.sessionFile
+				? wrapTextWithAnsi(
+						this.tag("session file", conversation.sessionFile),
+						width,
+					)
+				: []),
 			"",
 		];
 

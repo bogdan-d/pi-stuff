@@ -74,6 +74,7 @@ export function registerSubagentsCommand(
 								onSettingsChange: (change) => {
 									settings = applySubagentSettingsChange(settings, change);
 									runtime.configure({
+										saveSessions: settings.runtime.saveSessions,
 										maxExecuting: settings.runtime.maxConcurrentSubagents,
 										maxConversations: settings.runtime.maxConversations,
 									});

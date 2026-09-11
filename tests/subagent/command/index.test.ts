@@ -144,6 +144,10 @@ describe("subagents command registration", () => {
 						kind: "maxConcurrentSubagents",
 						value: 8,
 					});
+					component.options.onSettingsChange({
+						kind: "saveSessions",
+						value: true,
+					});
 					component.options.onStart("worker", "work");
 				},
 			},
@@ -152,6 +156,7 @@ describe("subagents command registration", () => {
 		await handler("settings", ctx);
 
 		expect(configure).toHaveBeenLastCalledWith({
+			saveSessions: true,
 			maxExecuting: 8,
 			maxConversations: 100,
 		});

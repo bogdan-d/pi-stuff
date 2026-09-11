@@ -16,6 +16,7 @@ export interface SubagentUiSettings {
 }
 
 export interface SubagentRuntimeSettings {
+	saveSessions: boolean;
 	maxTasksPerCall: number;
 	/**
 	 * Tree-wide cap on concurrently running subagents. A single shared task queue spans every
@@ -58,6 +59,7 @@ export function createDefaultSubagentSettings(): SubagentSettings {
 	return {
 		...DEFAULT_SUBAGENT_UI_SETTINGS,
 		runtime: {
+			saveSessions: false,
 			maxTasksPerCall: 8,
 			maxConcurrentSubagents: 4,
 			maxConversations: 100,
@@ -177,6 +179,14 @@ export function normalizeSettings(value: unknown): SubagentSettingsLoadResult {
 
 	const runtime = objectValue(record["runtime"]);
 	if (runtime) {
+		assignBoolean(
+			runtime,
+			"saveSessions",
+			(value) => {
+				settings.runtime.saveSessions = value;
+			},
+			warnings,
+		);
 		assignPositiveInt(
 			runtime,
 			"maxTasksPerCall",
@@ -386,6 +396,7 @@ export interface PrepareSubagentRuntimeContext
 
 export interface PrepareSubagentRuntimeTarget {
 	configure?(options: {
+		saveSessions?: boolean;
 		maxExecuting?: number;
 		maxConversations?: number;
 	}): void;
@@ -416,6 +427,7 @@ export async function prepareSubagentRuntime({
 }: PrepareSubagentRuntimeOptions): Promise<SubagentSettings> {
 	const settings = await loadSubagentSettings(ctx, settingsStore);
 	runtime.configure?.({
+		saveSessions: settings.runtime.saveSessions,
 		maxExecuting: settings.runtime.maxConcurrentSubagents,
 		maxConversations: settings.runtime.maxConversations,
 	});

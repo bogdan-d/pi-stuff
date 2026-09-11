@@ -201,7 +201,17 @@ export async function executeGeneration(
 	if (signal?.aborted) return skippedGeneration(agent, generation);
 
 	const requestedThinking = requestedConfig.thinking;
-	const sessionManager = dependencies.sessionManager(cwd);
+	const sessionManager = agent.saveSessions
+		? SessionManager.create(
+				cwd,
+				path.join(
+					agentDir,
+					"subagent",
+					"sessions",
+					agent.rootSessionId ?? ctx.sessionManager.getSessionId(),
+				),
+			)
+		: dependencies.sessionManager(cwd);
 	const settingsManager = dependencies.settingsManager(cwd, agentDir);
 	const sessionOptions = {
 		cwd,

@@ -173,6 +173,7 @@ export interface GenerationSnapshot {
 	readonly steers: readonly SteerReceipt[];
 }
 export interface ConversationSnapshot {
+	readonly sessionFile?: string;
 	readonly conversationId: ConversationId;
 	readonly parentConversationId?: ConversationId;
 	readonly spawnedInGeneration?: number;
@@ -486,6 +487,8 @@ export class Conversation {
 	readonly listener: ConversationUpdateListener;
 	private readonly generations: Generation[] = [];
 	private session: AgentSession | undefined;
+	readonly saveSessions: boolean;
+	readonly rootSessionId: string | undefined;
 	private stopping:
 		| {
 				generation: Generation;
@@ -503,6 +506,8 @@ export class Conversation {
 		spawn: SpawnRequest,
 		listener: ConversationUpdateListener,
 		options: {
+			saveSessions?: boolean;
+			rootSessionId?: string;
 			parentConversationId?: ConversationId;
 			startedInParentGeneration?: number;
 			resolvedSkillBlocks?: readonly string[];
@@ -510,6 +515,8 @@ export class Conversation {
 		} = {},
 	) {
 		this.conversationId = conversationId;
+		this.saveSessions = options.saveSessions ?? false;
+		this.rootSessionId = options.rootSessionId;
 		this.definition = definition;
 		this.listener = listener;
 		this.agentName = spawn.agent;
@@ -814,6 +821,7 @@ export class Conversation {
 	}
 
 	snapshot(): ConversationSnapshot {
+		const sessionFile = this.session?.sessionManager?.getSessionFile();
 		const generations = this.generationHistory;
 		const cost = sumCosts(generations.map((generation) => generation.cost));
 		const currentGeneration = this.hasCurrentGeneration
@@ -821,6 +829,7 @@ export class Conversation {
 			: undefined;
 		return Object.freeze({
 			conversationId: this.conversationId,
+			...(sessionFile ? { sessionFile } : {}),
 			...(this.parentConversationId
 				? { parentConversationId: this.parentConversationId }
 				: {}),
