@@ -1,6 +1,10 @@
 import { resolve as resolvePath } from "node:path";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionContext,
+	SessionManager,
+} from "@earendil-works/pi-coding-agent";
 import { AgentRegistry, resolveRequestedConfig } from "./agents.js";
+import type { ConversationCheckpoint } from "./checkpoint.js";
 import {
 	type CanonicalLiveSubagent,
 	type FailureProjectionMode,
@@ -145,6 +149,7 @@ export class SubagentRuntime {
 	readonly registry: AgentRegistry;
 	private maximumConversations: number;
 	private saveSessions = false;
+	private readonly shutdownController = new AbortController();
 	private readonly cancellationSettlementMs: number;
 	private readonly loadSkillPaths: (cwd: string) => Promise<readonly string[]>;
 
@@ -172,6 +177,65 @@ export class SubagentRuntime {
 
 	get scheduler(): GenerationScheduler {
 		return this.executionScheduler;
+	}
+	checkpointLineage(conversation: Conversation): Conversation[] {
+		const lineage = [conversation];
+		let parent = conversation.parentConversationId;
+		while (parent) {
+			const ancestor = this.conversations.get(parent);
+			if (!ancestor) break;
+			lineage.unshift(ancestor);
+			parent = ancestor.parentConversationId;
+		}
+		return lineage;
+	}
+	async restoreConversation(
+		data: ConversationCheckpoint,
+		session?: SessionManager,
+		error?: string,
+	): Promise<void> {
+		const listener: ConversationUpdateListener = (changed, kind) =>
+			this.updated(changed, kind);
+		let conversation: Conversation;
+		try {
+			conversation = Conversation.restore(data, session, error, listener);
+		} catch (cause) {
+			conversation = Conversation.restore(
+				data,
+				undefined,
+				`Session unavailable: ${cause instanceof Error ? cause.message : String(cause)}`,
+				listener,
+			);
+		}
+		if (this.conversations.has(conversation.conversationId)) return;
+		const cwd = data.effectiveConfig?.cwd ?? data.requestedConfig.cwd;
+		if (cwd) {
+			await this.prepareSkillCatalog(cwd);
+			const catalog = this.skillCatalogs.get(canonicalCwd(cwd));
+			if (catalog) this.conversationSkillCatalogs.set(conversation, catalog);
+		}
+		this.conversationIds.reserve(conversation.conversationId);
+		this.conversations.set(conversation.conversationId, conversation);
+	}
+	reserveConversationId(id: ConversationId): void {
+		this.conversationIds.reserve(id);
+	}
+	async shutdown(): Promise<void> {
+		this.shutdownController.abort();
+		await Promise.all(
+			[...this.conversations.values()].map(async (conversation) => {
+				const generation = conversation.latestGeneration;
+				if (conversation.hasActiveExecution) {
+					void conversation.abort("Parent session ended.");
+					this.executionScheduler.cancelQueued(
+						generation,
+						conversation.generationSnapshot(generation),
+					);
+					await this.finishCancellation(conversation, generation);
+				}
+				await conversation.disposeSession();
+			}),
+		);
 	}
 	get maxConversations(): number {
 		return this.maximumConversations;
@@ -303,6 +367,8 @@ export class SubagentRuntime {
 			initiatedBy?: GenerationInitiator;
 		} = {},
 	): GenerationHandle {
+		if (this.shutdownController.signal.aborted)
+			throw new Error("Subagent runtime has shut down.");
 		const starts: OrderedStartOutcome[] = [];
 		const executions: Promise<unknown>[] = [];
 		const caller = options.caller;
@@ -328,7 +394,7 @@ export class SubagentRuntime {
 			}
 			const { conversation, generation } = reservation;
 			const execution = this.executionScheduler
-				.schedule(ctx, undefined, conversation, generation)
+				.schedule(ctx, this.shutdownController.signal, conversation, generation)
 				.finally(() => conversation.executionSettled(generation));
 			executions.push(execution);
 			this.updated(conversation, "status");

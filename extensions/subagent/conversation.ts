@@ -2,6 +2,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import type {
 	AgentSession,
 	AgentSessionEvent,
+	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import {
 	GenerationActivity,
@@ -15,7 +16,9 @@ import type {
 	RequestedExecutionConfig,
 } from "./agents.js";
 import { resolveRequestedConfig, summarizeAgentDefinition } from "./agents.js";
+import type { ConversationCheckpoint } from "./checkpoint.js";
 import type { ConversationId } from "./identifiers.js";
+import { isConversationId } from "./identifiers.js";
 import type { SpawnRequest } from "./schema.js";
 import type { TranscriptEntry } from "./transcript.js";
 
@@ -155,6 +158,7 @@ export interface NestedJoinAttemptSnapshot {
 }
 
 export interface GenerationSnapshot {
+	readonly restored?: true;
 	readonly generation: number;
 	readonly kind: GenerationKind;
 	readonly initiatedBy: GenerationInitiator;
@@ -173,6 +177,7 @@ export interface GenerationSnapshot {
 	readonly steers: readonly SteerReceipt[];
 }
 export interface ConversationSnapshot {
+	readonly restorationError?: string;
 	readonly sessionFile?: string;
 	readonly conversationId: ConversationId;
 	readonly parentConversationId?: ConversationId;
@@ -209,7 +214,9 @@ export type GenerationState =
 
 /** One append-only execution generation within a conversation. Object identity is its exact internal key. */
 export class Generation {
-	readonly createdAt = Date.now();
+	createdAt = Date.now();
+	restored = false;
+	entryStart: string | null = null;
 	readonly activity: GenerationActivity;
 	readonly number: number;
 	readonly prompt: string;
@@ -281,6 +288,7 @@ export class Generation {
 		this.sessionMessageStart = Array.isArray(session.messages)
 			? session.messages.length
 			: 0;
+		this.entryStart = session.sessionManager?.getLeafId() ?? null;
 		this.state = { kind: "running", session, startedAt: Date.now() };
 	}
 
@@ -475,7 +483,10 @@ export interface GenerationBinding {
 
 /** One persistent conversation containing append-only, one-based generations. */
 export class Conversation {
-	readonly createdAt = Date.now();
+	createdAt = Date.now();
+	private restoredSessionFile: string | undefined;
+	private restoredLeafId: string | null = null;
+	private restorationError: string | undefined;
 	readonly conversationId: ConversationId;
 	readonly definition: AgentDefinition;
 	readonly agentName: string;
@@ -569,7 +580,8 @@ export class Conversation {
 		const latest = this.latestGeneration;
 		return (
 			latest.state.kind === "done" &&
-			this.session !== undefined &&
+			!this.restorationError &&
+			(this.session !== undefined || this.restoredSessionFile !== undefined) &&
 			["completed", "interrupted", "aborted"].includes(latest.state.outcome)
 		);
 	}
@@ -615,6 +627,8 @@ export class Conversation {
 			initiatedBy,
 			startedInParentGeneration,
 		);
+		generation.entryStart =
+			this.session?.sessionManager?.getLeafId() ?? this.restoredLeafId;
 		this.generations.push(generation);
 		return generation;
 	}
@@ -631,7 +645,11 @@ export class Conversation {
 	bindSession(generation: Generation, session: AgentSession): void {
 		if (generation !== this.requireCurrentGeneration())
 			throw new Error(`Generation ${generation.number} is no longer current.`);
-		if (generation.kind === "resume" && session !== this.session) {
+		if (
+			generation.kind === "resume" &&
+			this.session &&
+			session !== this.session
+		) {
 			throw new Error(
 				`Generation ${generation.number} must reuse its conversation session.`,
 			);
@@ -643,6 +661,167 @@ export class Conversation {
 	}
 	sessionForResume(): AgentSession | undefined {
 		return this.session;
+	}
+	get sessionFileForResume(): string | undefined {
+		return this.restorationError ? undefined : this.restoredSessionFile;
+	}
+
+	checkpoint(): ConversationCheckpoint {
+		const snapshot = this.snapshot();
+		const { skills, tools, ...requested } = this.requestedConfig;
+		return {
+			version: 1,
+			rootSessionId: this.rootSessionId ?? "",
+			conversationId: this.conversationId,
+			label: this.label,
+			createdAt: this.createdAt,
+			saveSessions: this.saveSessions,
+			definition: { ...this.definition },
+			...(this.requestedOverrides
+				? { requestedOverrides: { ...this.requestedOverrides } }
+				: {}),
+			requestedConfig: {
+				...requested,
+				...(tools ? { tools: [...tools] } : {}),
+				...(skills ? { skills: [...skills] } : {}),
+			},
+			...(this.parentConversationId
+				? { parentConversationId: this.parentConversationId }
+				: {}),
+			...(snapshot.sessionFile ? { sessionFile: snapshot.sessionFile } : {}),
+			...(this.resolvedSkillBlocks
+				? { resolvedSkillBlocks: [...this.resolvedSkillBlocks] }
+				: {}),
+			...(this.effectiveConfig
+				? {
+						effectiveConfig: {
+							...this.effectiveConfig,
+							tools: [...this.effectiveConfig.tools],
+							skills: [...this.effectiveConfig.skills],
+						},
+					}
+				: {}),
+			generations: this.generations.map((generation) => {
+				const item = this.project(generation);
+				return {
+					generation: generation.number,
+					prompt: generation.prompt,
+					createdAt: generation.createdAt,
+					initiatedBy: generation.initiatedBy,
+					entryStart: generation.entryStart,
+					status: item.status,
+					receipts: { ...item.receipts },
+					cost: { ...item.cost },
+					...(generation.startedInParentGeneration
+						? {
+								startedInParentGeneration: generation.startedInParentGeneration,
+							}
+						: {}),
+				};
+			}),
+		};
+	}
+
+	static restore(
+		data: ConversationCheckpoint,
+		session: SessionManager | undefined,
+		error: string | undefined,
+		listener: ConversationUpdateListener,
+	): Conversation {
+		const parentConversationId = data.parentConversationId;
+		if (
+			!isConversationId(data.conversationId) ||
+			(parentConversationId !== undefined &&
+				!isConversationId(parentConversationId))
+		)
+			throw new Error("Invalid saved subagent identity.");
+		const first = data.generations[0]!;
+		const conversation = new Conversation(
+			data.conversationId,
+			data.definition,
+			{
+				kind: "spawn",
+				agent: data.definition.name,
+				label: data.label,
+				prompt: first.prompt,
+				...data.requestedOverrides,
+				...(data.requestedConfig.cwd !== undefined
+					? { cwd: data.requestedConfig.cwd }
+					: {}),
+				...(data.requestedConfig.skills
+					? { skills: data.requestedConfig.skills }
+					: {}),
+			},
+			listener,
+			{
+				saveSessions: data.saveSessions,
+				rootSessionId: data.rootSessionId,
+				...(parentConversationId ? { parentConversationId } : {}),
+				...(data.resolvedSkillBlocks
+					? { resolvedSkillBlocks: data.resolvedSkillBlocks }
+					: {}),
+			},
+		);
+		conversation.createdAt = data.createdAt;
+		conversation.restoredSessionFile = data.sessionFile;
+		conversation.restoredLeafId = session?.getLeafId() ?? null;
+		conversation.restorationError = error;
+		if (data.effectiveConfig)
+			conversation.effectiveConfig = data.effectiveConfig;
+		conversation.generations.length = 0;
+		const entries = session?.getEntries() ?? [];
+		const boundary = (id: string | null) =>
+			id === null ? 0 : entries.findIndex((entry) => entry.id === id) + 1;
+		for (const [index, item] of data.generations.entries()) {
+			const generation = conversation.newGeneration(
+				item.generation,
+				item.prompt,
+				item.initiatedBy,
+				item.startedInParentGeneration,
+			);
+			generation.createdAt = item.createdAt;
+			generation.entryStart = item.entryStart;
+			generation.restored = true;
+			generation.state =
+				item.status.kind === "done"
+					? { ...item.status }
+					: {
+							kind: "done",
+							outcome: "interrupted",
+							completedAt: Date.now(),
+							error: "Parent session ended before this generation completed.",
+							...(item.status.kind === "running"
+								? { startedAt: item.status.startedAt }
+								: {}),
+						};
+			Object.assign(generation.receipts, item.receipts);
+			const next = data.generations[index + 1];
+			generation.activity.restore(
+				entries.slice(
+					boundary(item.entryStart),
+					next ? boundary(next.entryStart) : undefined,
+				),
+				item.status.kind === "done" ? item.cost : undefined,
+			);
+			conversation.generations.push(generation);
+		}
+		return conversation;
+	}
+
+	async disposeSession(): Promise<void> {
+		this.unsubscribe?.();
+		this.unsubscribe = undefined;
+		const session = this.session;
+		this.session = undefined;
+		if (!session) return;
+		try {
+			await session.extensionRunner?.emit({
+				type: "session_shutdown",
+				reason: "quit",
+			});
+		} finally {
+			session.dispose();
+		}
 	}
 
 	executionSettled(generation: Generation): void {
@@ -821,7 +1000,9 @@ export class Conversation {
 	}
 
 	snapshot(): ConversationSnapshot {
-		const sessionFile = this.session?.sessionManager?.getSessionFile();
+		const sessionFile =
+			this.session?.sessionManager?.getSessionFile() ??
+			this.restoredSessionFile;
 		const generations = this.generationHistory;
 		const cost = sumCosts(generations.map((generation) => generation.cost));
 		const currentGeneration = this.hasCurrentGeneration
@@ -830,6 +1011,9 @@ export class Conversation {
 		return Object.freeze({
 			conversationId: this.conversationId,
 			...(sessionFile ? { sessionFile } : {}),
+			...(this.restorationError
+				? { restorationError: this.restorationError }
+				: {}),
 			...(this.parentConversationId
 				? { parentConversationId: this.parentConversationId }
 				: {}),
@@ -899,6 +1083,7 @@ export class Conversation {
 		);
 		return Object.freeze({
 			generation: generation.number,
+			...(generation.restored ? { restored: true as const } : {}),
 			kind: generation.kind,
 			initiatedBy: generation.initiatedBy,
 			...(generation.startedInParentGeneration !== undefined

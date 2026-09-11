@@ -25,6 +25,7 @@ import {
 	CompletionNotifier,
 	formatCompletionNotificationMessage,
 } from "./notifications.js";
+import { registerSubagentPersistence } from "./persistence.js";
 import { SubagentRuntime } from "./runtime.js";
 import {
 	DEFAULT_SUBAGENT_SETTINGS,
@@ -77,6 +78,9 @@ export default function subagentExtension(
 
 	let currentSettings: SubagentSettings = DEFAULT_SUBAGENT_SETTINGS;
 	const getCurrentSettings = () => currentSettings;
+	registerSubagentPersistence(pi, runtime, settingsStore, (settings) => {
+		currentSettings = settings;
+	});
 	registerSubagentWidgetLifecycle(pi, runtime, getCurrentSettings);
 	registerSubagentCostStatusLifecycle(pi, runtime);
 
@@ -163,6 +167,7 @@ export default function subagentExtension(
 			},
 		}),
 	);
+	pi.on("session_shutdown", () => runtime.shutdown());
 }
 
 export interface SubagentEventBus {
@@ -275,6 +280,7 @@ export async function confirmWithActiveSubagents(
 
 interface MetadataPi {
 	appendEntry?(customType: string, data?: unknown): void;
+	on?: ExtensionAPI["on"];
 }
 interface MetadataSource {
 	onConversationUpdate?(
@@ -287,7 +293,7 @@ export function registerSubagentMetadataPersistence(
 ): () => void {
 	if (!pi.appendEntry || !source.onConversationUpdate) return () => {};
 	const persisted = new Set<string>();
-	return source.onConversationUpdate((agent, kind) => {
+	const unsubscribe = source.onConversationUpdate((agent, kind) => {
 		if (kind !== "status") return;
 		const snapshot = agent.snapshot();
 		const generation = snapshot.generations.at(-1);
@@ -310,6 +316,8 @@ export function registerSubagentMetadataPersistence(
 			projectSubagentGenerationIndex(snapshot),
 		);
 	});
+	pi.on?.("session_shutdown", unsubscribe);
+	return unsubscribe;
 }
 export function projectSubagentGenerationIndex(
 	snapshot: ReturnType<Conversation["snapshot"]>,

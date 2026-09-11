@@ -19,6 +19,7 @@ import {
 	stripFrontmatter,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { readSavedSession } from "./checkpoint.js";
 import {
 	Conversation,
 	completedGeneration,
@@ -120,17 +121,19 @@ export async function executeGeneration(
 ): Promise<GenerationSnapshot> {
 	if (generation.kind === "resume") {
 		const session = agent.sessionForResume();
-		if (!session) {
+		if (!session && !agent.sessionFileForResume) {
 			throw new Error(`Cannot resume an agent without a conversation session.`);
 		}
-		agent.bindSession(generation, session);
-		return promptAgent(
-			session,
-			agent,
-			generation,
-			signal,
-			dependencies.childSessionEvent,
-		);
+		if (session) {
+			agent.bindSession(generation, session);
+			return promptAgent(
+				session,
+				agent,
+				generation,
+				signal,
+				dependencies.childSessionEvent,
+			);
+		}
 	}
 
 	if (signal?.aborted) return skippedGeneration(agent, generation);
@@ -141,7 +144,10 @@ export async function executeGeneration(
 		parentConversationId: agent.parentConversationId,
 		spawnedInGeneration: agent.spawnedInGeneration,
 	};
-	const requestedConfig = agent.requestedConfig;
+	const requestedConfig =
+		generation.kind === "resume"
+			? (agent.snapshot().effectiveConfig ?? agent.requestedConfig)
+			: agent.requestedConfig;
 	const cwdResolution = resolveTaskCwd(ctx.cwd, requestedConfig.cwd);
 	if (!cwdResolution.ok)
 		return errorGeneration(agent, generation, cwdResolution.error);
@@ -201,17 +207,22 @@ export async function executeGeneration(
 	if (signal?.aborted) return skippedGeneration(agent, generation);
 
 	const requestedThinking = requestedConfig.thinking;
-	const sessionManager = agent.saveSessions
-		? SessionManager.create(
-				cwd,
-				path.join(
-					agentDir,
-					"subagent",
-					"sessions",
-					agent.rootSessionId ?? ctx.sessionManager.getSessionId(),
-				),
-			)
-		: dependencies.sessionManager(cwd);
+	const savedFile =
+		generation.kind === "resume" ? agent.sessionFileForResume : undefined;
+	if (savedFile) readSavedSession(savedFile);
+	const sessionManager = savedFile
+		? SessionManager.open(savedFile)
+		: agent.saveSessions
+			? SessionManager.create(
+					cwd,
+					path.join(
+						agentDir,
+						"subagent",
+						"sessions",
+						agent.rootSessionId ?? ctx.sessionManager.getSessionId(),
+					),
+				)
+			: dependencies.sessionManager(cwd);
 	const settingsManager = dependencies.settingsManager(cwd, agentDir);
 	const sessionOptions = {
 		cwd,

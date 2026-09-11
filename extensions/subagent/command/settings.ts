@@ -24,6 +24,7 @@ import {
 
 export type SubagentSettingsChange =
 	| { kind: "saveSessions"; value: boolean }
+	| { kind: "restoreSubagents"; value: boolean }
 	| { kind: "widgetPlacement"; value: WidgetPlacement }
 	| { kind: "widgetMode"; value: WidgetMode }
 	| { kind: "completionNotify"; value: CompletionNotifyMode }
@@ -37,6 +38,11 @@ export function applySubagentSettingsChange(
 	change: SubagentSettingsChange,
 ): SubagentSettings {
 	switch (change.kind) {
+		case "restoreSubagents":
+			return {
+				...settings,
+				runtime: { ...settings.runtime, restoreSubagents: change.value },
+			};
 		case "saveSessions":
 			return {
 				...settings,
@@ -129,11 +135,11 @@ export class SubagentSettingsComponent implements Component, Focusable {
 		this.editor?.invalidate();
 	}
 
-	render(width: number): string[] {
+	render(width: number, height = Infinity): string[] {
 		const safeWidth = Math.max(1, width);
 		if (safeWidth < 56) {
 			return [
-				...this.renderIndex(safeWidth),
+				...this.renderIndex(safeWidth, Math.max(1, Math.floor(height / 2))),
 				this.dim("─".repeat(safeWidth)),
 				...this.renderSelected(safeWidth),
 			].map((line) => fit(line, safeWidth));
@@ -141,10 +147,10 @@ export class SubagentSettingsComponent implements Component, Focusable {
 
 		const leftWidth = Math.max(26, Math.floor(safeWidth * 0.38));
 		const rightWidth = Math.max(1, safeWidth - leftWidth - 3);
-		const left = this.renderIndex(leftWidth);
+		const left = this.renderIndex(leftWidth, height);
 		const right = this.renderSelected(rightWidth);
-		const height = Math.max(left.length, right.length);
-		return Array.from({ length: height }, (_, index) => {
+		const rows = Math.max(left.length, right.length);
+		return Array.from({ length: rows }, (_, index) => {
 			const leftLine = fit(left[index] ?? "", leftWidth);
 			const rightLine = fit(right[index] ?? "", rightWidth);
 			return `${pad(leftLine, leftWidth)} ${this.dim("│")} ${rightLine}`;
@@ -171,8 +177,9 @@ export class SubagentSettingsComponent implements Component, Focusable {
 		this.requestRender();
 	}
 
-	private renderIndex(width: number): string[] {
+	private renderIndex(width: number, height: number): string[] {
 		const lines: string[] = [""];
+		let selectedLine = 0;
 		const maxValueWidth = Math.max(
 			...this.items.map((item) => visibleWidth(settingListValue(item))),
 		);
@@ -194,12 +201,14 @@ export class SubagentSettingsComponent implements Component, Focusable {
 			const rawValue = settingListValue(item);
 			const value = enabled ? this.accent(rawValue) : this.dim(rawValue);
 			const prefix = `  ${marker} `;
+			if (index === this.selected) selectedLine = lines.length;
 			lines.push(
 				`${prefix}${pad(fit(label, labelWidth), labelWidth)} ${value}`,
 			);
 		}
 		lines.push("");
-		return lines;
+		const offset = Math.max(0, selectedLine - height + 2);
+		return lines.slice(offset, offset + height);
 	}
 
 	private renderSelected(width: number): string[] {
@@ -216,6 +225,11 @@ export class SubagentSettingsComponent implements Component, Focusable {
 		];
 
 		if (!enabled) {
+			if (item.id === "restoreSubagents")
+				return [
+					...lines,
+					this.dim("Enable Save sessions to restore subagents on reopening."),
+				];
 			lines.push(
 				this.dim("Unavailable while Widget mode is summary."),
 				this.dim("Set Widget mode to progress to configure progress rows."),
@@ -255,9 +269,14 @@ export class SubagentSettingsComponent implements Component, Focusable {
 	}
 
 	private renderPreview(item: SettingDefinition, width: number): string[] {
+		if (item.id === "restoreSubagents")
+			return wrapTextWithAnsi(
+				"On reopening this parent session, restore saved history and collection state. Previously active work becomes interrupted. Follow-ups open the child session lazily. Fresh and forked parent sessions start empty.",
+				width,
+			).map((line) => this.muted(line));
 		if (item.id === "saveSessions")
 			return wrapTextWithAnsi(
-				"Native Pi JSONL files. Open with pi --session <path>. Final messages and tool results are saved, not streaming updates. Files remain after removal. No automatic restoration into this modal.",
+				"Native Pi JSONL files. Open with pi --session <path>. Final messages and tool results are saved, not streaming updates. Files remain after removal. Enable Restore subagents to reload them into this modal.",
 				width,
 			).map((line) => this.muted(line));
 		if (item.id === "completionNotify")
@@ -420,6 +439,8 @@ export class SubagentSettingsComponent implements Component, Focusable {
 	}
 
 	private isEnabled(item: SettingDefinition): boolean {
+		if (item.id === "restoreSubagents")
+			return this.value("saveSessions") === "on";
 		return (
 			item.id !== "widgetMaxRowsPerSection" ||
 			this.value("widgetMode") === "progress"
@@ -518,11 +539,21 @@ function createSettingDefinitions(
 			description:
 				"Save new subagent conversations to disk, including prompts and tool outputs. Existing conversations keep their storage mode through follow-ups. Files appear after the first finalized assistant message. Standalone continuation uses the current Pi environment.",
 		},
+		{
+			id: "restoreSubagents",
+			section: "Runtime",
+			label: "Restore subagents",
+			currentValue: settings.runtime.restoreSubagents ? "on" : "off",
+			values: ["off", "on"],
+			description:
+				"Restore saved subagents when this parent session is reopened or reloaded. Requires Save sessions. Changes apply on the next session load, not to the current list.",
+		},
 	];
 }
 
 function settingChange(id: SettingId, value: string): SubagentSettingsChange {
-	if (id === "saveSessions") return { kind: id, value: value === "on" };
+	if (id === "saveSessions" || id === "restoreSubagents")
+		return { kind: id, value: value === "on" };
 	if (id === "widgetPlacement")
 		return { kind: id, value: value as WidgetPlacement };
 	if (id === "widgetMode") return { kind: id, value: value as WidgetMode };

@@ -353,7 +353,7 @@ export class SubagentOverlayComponent implements Component, Focusable {
 			? this.renderDetail(innerWidth, bodyHeight)
 			: this.page === "settings"
 				? fitHeight(
-						this.settings.render(Math.max(1, innerWidth - 2)),
+						this.settings.render(Math.max(1, innerWidth - 2), bodyHeight),
 						bodyHeight,
 					)
 				: this.renderBrowser(innerWidth, bodyHeight);
@@ -642,6 +642,9 @@ export class SubagentOverlayComponent implements Component, Focusable {
 						this.tag("session file", conversation.sessionFile),
 						width,
 					)
+				: []),
+			...(conversation.restorationError
+				? wrapTextWithAnsi(this.error(conversation.restorationError), width)
 				: []),
 			"",
 		];

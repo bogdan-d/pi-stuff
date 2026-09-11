@@ -2,6 +2,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import type {
 	AgentSession,
 	AgentSessionEvent,
+	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import type {
 	ConversationUpdateKind,
@@ -124,6 +125,67 @@ export class GenerationActivity {
 				this.onChange("turn");
 			}
 		});
+	}
+
+	/** Rebuild finalized history without emitting live activity or completion events. */
+	restore(
+		entries: readonly SessionEntry[],
+		completedCost?: Usage["cost"],
+	): void {
+		for (const entry of entries) {
+			if (entry.type === "compaction") {
+				this._compactions++;
+				continue;
+			}
+			if (entry.type !== "message") continue;
+			const message = entry.message;
+			this.transcript.record({ type: "message_end", message });
+			if (message.role === "assistant") {
+				this._turns++;
+				this._latestUsage = message.usage;
+				this._addCost(message.usage);
+				this._message = message.content
+					.filter((block) => block.type === "text")
+					.map((block) => block.text)
+					.join("\n");
+				for (const block of message.content) {
+					if (block.type !== "toolCall") continue;
+					this.transcript.record({
+						type: "tool_execution_start",
+						toolCallId: block.id,
+						toolName: block.name,
+						args: block.arguments,
+					});
+					this._toolHistory.push({
+						id: block.id,
+						name: block.name,
+						startedAt: message.timestamp,
+						...(toolInputSummary(block.name, block.arguments)
+							? { inputSummary: toolInputSummary(block.name, block.arguments)! }
+							: {}),
+					});
+				}
+			} else if (message.role === "toolResult") {
+				this.transcript.record({
+					type: "tool_execution_end",
+					toolCallId: message.toolCallId,
+					toolName: message.toolName,
+					result: { content: message.content, details: message.details },
+					isError: message.isError,
+				});
+				const index = this._toolHistory.findIndex(
+					(tool) => tool.id === message.toolCallId,
+				);
+				if (index >= 0)
+					this._toolHistory[index] = {
+						...this._toolHistory[index]!,
+						completedAt: message.timestamp,
+						isError: message.isError,
+					};
+			}
+		}
+		if (completedCost) this._cost = { ...completedCost };
+		this._phase = "settling";
 	}
 
 	private _addCost(usage: Usage): void {

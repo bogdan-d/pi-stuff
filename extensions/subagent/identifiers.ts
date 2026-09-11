@@ -71,6 +71,9 @@ export class IdAllocatorBase<T extends string> {
 	private randomCandidate(): string {
 		return `${this.firstWords[this.randomIndex(this.firstWords.length)]}-${this.secondWords[this.randomIndex(this.secondWords.length)]}`;
 	}
+	reserve(id: T): void {
+		this.allocated.add(id);
+	}
 }
 
 /** Allocates unique conversation IDs for one owning runtime lifetime. */

@@ -2,6 +2,21 @@ import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { CompletionNotifier } from "../../../extensions/subagent/notifications.js";
 
+test("restored completions stay quiet until a new generation runs", () => {
+	const f = fixture();
+	f.generation.restored = true;
+	f.fire("session_start");
+	f.flush(1000);
+	assert.equal(f.sent.length, 0);
+	assert.equal(f.notified.length, 0);
+	delete f.generation.restored;
+	f.generation.generation = 2;
+	f.fire("agent_end");
+	f.flush(1000);
+	assert.equal(f.sent.length, 1);
+	f.notifier.unsubscribe();
+});
+
 function fixture(
 	mode: "auto" | "steer" | "none" = "auto",
 	idle = true,

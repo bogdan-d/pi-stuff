@@ -667,7 +667,12 @@ export class CompletionNotifier {
 			.listConversations()
 			.flatMap((conversation) => {
 				const generation = conversation.generations.at(-1);
-				if (!generation || generation.initiatedBy !== "user") return [];
+				if (
+					!generation ||
+					generation.restored ||
+					generation.initiatedBy !== "user"
+				)
+					return [];
 				const reference = {
 					conversationId: conversation.conversationId,
 					generation: generation.generation,
@@ -767,7 +772,7 @@ export class CompletionNotifier {
 	private catalog(): CompletionCandidate[] {
 		return this.deps.manager.listConversations().flatMap((conversation) => {
 			const generation = conversation.generations.at(-1);
-			return generation?.status.kind === "done"
+			return generation?.status.kind === "done" && !generation.restored
 				? [{ conversation, generation }]
 				: [];
 		});

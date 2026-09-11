@@ -1,4 +1,5 @@
 import { expect, mock, test } from "bun:test";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { completedGeneration } from "../../../extensions/subagent/conversation.js";
 import subagentExtension from "../../../extensions/subagent/index.js";
 import { SubagentRuntime } from "../../../extensions/subagent/runtime.js";
@@ -22,6 +23,7 @@ test("extension reconciles current completion messages at the provider context b
 				messages: [],
 				subscribe: () => () => {},
 				abort() {},
+				dispose() {},
 			} as any);
 			return completedGeneration(agent, generation, "done");
 		},
@@ -57,9 +59,12 @@ test("extension reconciles current completion messages at the provider context b
 		},
 	);
 
-	const notifierContext = { isIdle: () => true };
+	const notifierContext = {
+		isIdle: () => true,
+		sessionManager: SessionManager.inMemory(),
+	};
 	for (const handler of handlers.get("session_start") ?? [])
-		handler({}, notifierContext);
+		await handler({}, notifierContext);
 	await eventually(() => expect(sent).toHaveLength(1));
 
 	const completion = { role: "custom", ...sent[0] };
@@ -76,7 +81,7 @@ test("extension reconciles current completion messages at the provider context b
 	expect(reconcile?.({ messages: [completion] })).toEqual({ messages: [] });
 
 	for (const handler of handlers.get("session_shutdown") ?? [])
-		handler({}, notifierContext);
+		await handler({}, notifierContext);
 });
 
 test("loading settings for a tool invocation refreshes the visible widget", async () => {
