@@ -3,6 +3,7 @@ import type {
 	Model,
 	ModelAuth,
 	OAuthCredential,
+	Provider,
 } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
@@ -32,6 +33,8 @@ type RuntimeOverrideSnapshot = {
 };
 
 type RuntimeProviderConfig = Parameters<ExtensionAPI["registerProvider"]>[1];
+type RuntimeRegistration = RuntimeProviderConfig | Provider;
+type SelectedAuth = { auth: ModelAuth; credential: OAuthCredential };
 type PiModel = Model<Api>;
 
 type ProviderAccountState = {
@@ -248,7 +251,50 @@ export class RuntimeAuthCoordinator {
 
 		try {
 			const availableModelIds = readAvailableModelIds(credential);
-			if (!this.overlay.apply(ctx, operation, auth, availableModelIds)) {
+			if (
+				!this.overlay.apply(
+					ctx,
+					operation,
+					auth,
+					availableModelIds,
+					async (signal) => {
+						const latest = await store.updateProviderAsync(
+							this.provider.id,
+							async (state) => {
+								const name = state.active;
+								const selected = name && getOwnCredential(state.accounts, name);
+								if (!name || !selected)
+									throw new Error("Selected account is no longer available.");
+								if (selected.expires > Date.now() + REFRESH_SKEW_MS)
+									return state;
+								try {
+									const refreshed = await this.provider.oauth.refresh(
+										selected,
+										signal,
+									);
+									return {
+										...state,
+										accounts: defineOwn(state.accounts, name, refreshed),
+									};
+								} catch (error) {
+									throw new Error(redactCredentialError(error, selected));
+								}
+							},
+						);
+						const selected =
+							latest.active && getOwnCredential(latest.accounts, latest.active);
+						if (!selected)
+							throw new Error("Selected account is no longer available.");
+						try {
+							const resolved = await this.provider.oauth.toAuth(selected);
+							validateModelAuth(resolved, this.provider.displayName);
+							return { auth: resolved, credential: selected };
+						} catch (error) {
+							throw new Error(redactCredentialError(error, selected));
+						}
+					},
+				)
+			) {
 				return { status: "inactive", providerId: this.provider.id };
 			}
 			const applied = await this.controller.apply(
@@ -403,6 +449,7 @@ export class RuntimeAuthCoordinator {
 				if (
 					value === null &&
 					registered?.headers &&
+					registered.headers[name] !== null &&
 					Object.hasOwn(registered.headers, name)
 				) {
 					throw new Error(
@@ -442,8 +489,8 @@ export class RuntimeAuthCoordinator {
 class RuntimeProviderOverlay {
 	private generation = 0;
 	private owned = false;
-	private previous: RuntimeProviderConfig | undefined;
-	private applied: RuntimeProviderConfig | undefined;
+	private previous: RuntimeRegistration | undefined;
+	private applied: RuntimeRegistration | undefined;
 	private baseModels: NonNullable<RuntimeProviderConfig["models"]> | undefined;
 	private readonly pi: ExtensionAPI;
 	private readonly provider: AccountProviderAdapter;
@@ -469,10 +516,12 @@ class RuntimeProviderOverlay {
 		generation: number,
 		auth: ModelAuth,
 		availableModelIds?: readonly string[],
+		resolveAuth?: (signal: AbortSignal) => Promise<SelectedAuth>,
 	): boolean {
 		if (generation !== this.generation) return false;
 		const needsOverlay =
 			this.provider.requiresApiKeyBridge ||
+			getRegisteredNativeProvider(ctx, this.provider.id) !== undefined ||
 			auth.baseUrl !== undefined ||
 			(auth.headers !== undefined && Object.keys(auth.headers).length > 0) ||
 			availableModelIds !== undefined;
@@ -482,7 +531,6 @@ class RuntimeProviderOverlay {
 		}
 		const current = getRegisteredProviderConfig(ctx, this.provider.id);
 		if (this.owned && !shallowConfigEqual(current, this.applied)) {
-			this.reset();
 			throw new Error(
 				`${this.provider.displayName} provider configuration changed while pi-accounts owned its auth overlay.`,
 			);
@@ -492,7 +540,7 @@ class RuntimeProviderOverlay {
 			this.baseModels = readProviderModels(ctx, this.provider.id);
 		}
 
-		const next = this.buildConfig(auth, availableModelIds);
+		const next = this.buildConfig(auth, availableModelIds, resolveAuth);
 		if (Object.keys(next).length === 0 && !this.owned) return true;
 		this.replaceConfig(this.owned ? this.applied : current, next);
 		this.owned = true;
@@ -507,17 +555,91 @@ class RuntimeProviderOverlay {
 			this.reset();
 			return;
 		}
-		this.pi.unregisterProvider(this.provider.id);
-		if (this.previous && Object.keys(this.previous).length > 0) {
-			this.pi.registerProvider(this.provider.id, this.previous);
-		}
+		this.replaceConfig(current, this.previous);
 		this.reset();
 	}
 
 	private buildConfig(
 		auth: ModelAuth,
 		availableModelIds?: readonly string[],
-	): RuntimeProviderConfig {
+		resolveAuth?: (signal: AbortSignal) => Promise<SelectedAuth>,
+	): RuntimeRegistration {
+		if (this.previous && "id" in this.previous) {
+			const previous = this.previous;
+			let selected: OAuthCredential | undefined;
+			const resolve = async (signal: AbortSignal): Promise<ModelAuth> => {
+				if (!resolveAuth)
+					throw new Error("Selected account authentication failed.");
+				const result = await resolveAuth(signal);
+				selected = result.credential;
+				return result.auth;
+			};
+			return {
+				...previous,
+				...(auth.baseUrl ? { baseUrl: auth.baseUrl } : {}),
+				headers: { ...previous.headers, ...auth.headers },
+				auth: {
+					...previous.auth,
+					...(previous.auth.oauth
+						? {
+								oauth: {
+									...previous.auth.oauth,
+									refresh: async () => {
+										throw new Error(
+											"Standalone OAuth refresh is not permitted while an account is selected.",
+										);
+									},
+									toAuth: () => resolve(new AbortController().signal),
+								},
+							}
+						: {}),
+					apiKey: {
+						name: "Selected account",
+						login:
+							previous.auth.apiKey?.login ??
+							(async () => {
+								throw new Error("Use /accounts to sign in.");
+							}),
+						check: async () => ({ type: "api_key", source: "pi-accounts" }),
+						resolve: async ({ signal }) => ({
+							auth: await resolve(signal),
+							source: "pi-accounts",
+						}),
+					},
+				},
+				...(previous.refreshModels
+					? {
+							refreshModels: async (context) => {
+								await resolve(context.signal);
+								if (!selected)
+									throw new Error("Selected account is no longer available.");
+								await previous.refreshModels?.({
+									...context,
+									credential: selected,
+								});
+							},
+						}
+					: {}),
+				...(previous.filterModels
+					? {
+							filterModels: (models) =>
+								previous.filterModels?.(models, selected) ?? models,
+						}
+					: {}),
+				getModels: () => {
+					const ids = selected
+						? readAvailableModelIds(selected)
+						: availableModelIds;
+					const allowed = ids && new Set(ids);
+					return previous
+						.getModels()
+						.filter((model) => !allowed || allowed.has(model.id))
+						.map((model) =>
+							auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model,
+						);
+				},
+			};
+		}
 		const next: RuntimeProviderConfig = { ...(this.previous ?? {}) };
 		if (this.provider.requiresApiKeyBridge) next.apiKey = this.fallbackApiKey;
 		if (auth.baseUrl) next.baseUrl = auth.baseUrl;
@@ -535,19 +657,23 @@ class RuntimeProviderOverlay {
 	}
 
 	private replaceConfig(
-		fallback: RuntimeProviderConfig | undefined,
-		next: RuntimeProviderConfig,
+		fallback: RuntimeRegistration | undefined,
+		next: RuntimeRegistration | undefined,
 	): void {
 		this.pi.unregisterProvider(this.provider.id);
 		try {
-			if (Object.keys(next).length > 0)
-				this.pi.registerProvider(this.provider.id, next);
+			this.register(next);
 		} catch (error) {
-			if (fallback && Object.keys(fallback).length > 0) {
-				this.pi.registerProvider(this.provider.id, fallback);
-			}
+			this.pi.unregisterProvider(this.provider.id);
+			this.register(fallback);
 			throw error;
 		}
+	}
+
+	private register(config: RuntimeRegistration | undefined): void {
+		if (!config || Object.keys(config).length === 0) return;
+		if ("id" in config) this.pi.registerProvider(config);
+		else this.pi.registerProvider(this.provider.id, config);
 	}
 
 	private reset(): void {
@@ -830,7 +956,9 @@ function getOwnCredential(
 function getRegisteredProviderConfig(
 	ctx: ExtensionContext,
 	providerId: string,
-): RuntimeProviderConfig | undefined {
+): RuntimeRegistration | undefined {
+	const native = getRegisteredNativeProvider(ctx, providerId);
+	if (native) return native;
 	const registry = ctx.modelRegistry as unknown as {
 		getRegisteredProviderConfig?: (
 			provider: string,
@@ -846,8 +974,8 @@ function getRegisteredProviderConfig(
 }
 
 function shallowConfigEqual(
-	left: RuntimeProviderConfig | undefined,
-	right: RuntimeProviderConfig | undefined,
+	left: RuntimeRegistration | undefined,
+	right: RuntimeRegistration | undefined,
 ): boolean {
 	if (left === right) return true;
 	if (!left || !right) return !left && !right;
@@ -862,6 +990,13 @@ function shallowConfigEqual(
 			return false;
 	}
 	return true;
+}
+
+function getRegisteredNativeProvider(
+	ctx: ExtensionContext,
+	providerId: string,
+): Provider | undefined {
+	return ctx.modelRegistry.getRegisteredNativeProvider?.(providerId);
 }
 
 function enqueueMutation<T>(
