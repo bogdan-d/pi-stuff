@@ -123,16 +123,35 @@ export function registerSubagentPersistence(
 					let unavailable: string | undefined;
 					try {
 						if (record.sessionFile)
-							session = readSavedSession(record.sessionFile);
+							session = readSavedSession(record.sessionFile, record.sessionId);
 						else
 							unavailable =
 								"No saved session file. This subagent cannot be resumed.";
 					} catch (error) {
 						unavailable = `Session unavailable: ${errorMessage(error)}`;
 					}
-					await runtime.restoreConversation(record, session, unavailable);
+					const restoredRecord = await runtime.restoreConversation(
+						record,
+						session,
+						unavailable,
+					);
 					restored.add(id);
 					written.set(id, JSON.stringify(record));
+					if (
+						record.generations.some(
+							(generation) => generation.status.kind !== "done",
+						)
+					) {
+						// Persist interruption once without publishing live completion events.
+						try {
+							pi.appendEntry(CHECKPOINT_TYPE, restoredRecord);
+							written.set(id, JSON.stringify(restoredRecord));
+						} catch (error) {
+							warn(
+								`Could not save restored state for ${record.label}: ${errorMessage(error)}`,
+							);
+						}
+					}
 					if (unavailable) warn(`${record.label}: ${unavailable}`);
 				} catch (error) {
 					warn(`Could not restore ${record.label}: ${errorMessage(error)}`);

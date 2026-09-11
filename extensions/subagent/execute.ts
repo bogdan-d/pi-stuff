@@ -19,7 +19,7 @@ import {
 	stripFrontmatter,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { readSavedSession } from "./checkpoint.js";
+import { generationEntryOffsets, readSavedSession } from "./checkpoint.js";
 import {
 	Conversation,
 	completedGeneration,
@@ -209,7 +209,11 @@ export async function executeGeneration(
 	const requestedThinking = requestedConfig.thinking;
 	const savedFile =
 		generation.kind === "resume" ? agent.sessionFileForResume : undefined;
-	if (savedFile) readSavedSession(savedFile);
+	if (savedFile) {
+		const checkpoint = agent.checkpoint();
+		const saved = readSavedSession(savedFile, checkpoint.sessionId);
+		generationEntryOffsets(saved.getEntries(), checkpoint.generations);
+	}
 	const sessionManager = savedFile
 		? SessionManager.open(savedFile)
 		: agent.saveSessions

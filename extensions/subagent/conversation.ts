@@ -16,7 +16,10 @@ import type {
 	RequestedExecutionConfig,
 } from "./agents.js";
 import { resolveRequestedConfig, summarizeAgentDefinition } from "./agents.js";
-import type { ConversationCheckpoint } from "./checkpoint.js";
+import {
+	type ConversationCheckpoint,
+	generationEntryOffsets,
+} from "./checkpoint.js";
 import type { ConversationId } from "./identifiers.js";
 import { isConversationId } from "./identifiers.js";
 import type { SpawnRequest } from "./schema.js";
@@ -485,6 +488,7 @@ export interface GenerationBinding {
 export class Conversation {
 	createdAt = Date.now();
 	private restoredSessionFile: string | undefined;
+	private savedSessionId: string | undefined;
 	private restoredLeafId: string | null = null;
 	private restorationError: string | undefined;
 	readonly conversationId: ConversationId;
@@ -498,6 +502,7 @@ export class Conversation {
 	readonly listener: ConversationUpdateListener;
 	private readonly generations: Generation[] = [];
 	private session: AgentSession | undefined;
+	private sessionAbandoned = false;
 	readonly saveSessions: boolean;
 	readonly rootSessionId: string | undefined;
 	private stopping:
@@ -581,6 +586,7 @@ export class Conversation {
 		return (
 			latest.state.kind === "done" &&
 			!this.restorationError &&
+			!this.sessionAbandoned &&
 			(this.session !== undefined || this.restoredSessionFile !== undefined) &&
 			["completed", "interrupted", "aborted"].includes(latest.state.outcome)
 		);
@@ -656,14 +662,17 @@ export class Conversation {
 		}
 		generation.attach(session);
 		this.session = session;
+		this.savedSessionId = session.sessionManager?.getSessionId();
 		this.unsubscribe = generation.activity.subscribe(session);
 		this.listener(this, "status");
 	}
 	sessionForResume(): AgentSession | undefined {
-		return this.session;
+		return this.sessionAbandoned ? undefined : this.session;
 	}
 	get sessionFileForResume(): string | undefined {
-		return this.restorationError ? undefined : this.restoredSessionFile;
+		return this.restorationError || this.sessionAbandoned
+			? undefined
+			: this.restoredSessionFile;
 	}
 
 	checkpoint(): ConversationCheckpoint {
@@ -689,6 +698,7 @@ export class Conversation {
 				? { parentConversationId: this.parentConversationId }
 				: {}),
 			...(snapshot.sessionFile ? { sessionFile: snapshot.sessionFile } : {}),
+			...(this.savedSessionId ? { sessionId: this.savedSessionId } : {}),
 			...(this.resolvedSkillBlocks
 				? { resolvedSkillBlocks: [...this.resolvedSkillBlocks] }
 				: {}),
@@ -735,6 +745,13 @@ export class Conversation {
 				!isConversationId(parentConversationId))
 		)
 			throw new Error("Invalid saved subagent identity.");
+		if (
+			session &&
+			(!data.sessionId || data.sessionId !== session.getSessionId())
+		)
+			throw new Error(
+				"Saved child session ID does not match the session file.",
+			);
 		const first = data.generations[0]!;
 		const conversation = new Conversation(
 			data.conversationId,
@@ -764,14 +781,16 @@ export class Conversation {
 		);
 		conversation.createdAt = data.createdAt;
 		conversation.restoredSessionFile = data.sessionFile;
+		conversation.savedSessionId = data.sessionId;
 		conversation.restoredLeafId = session?.getLeafId() ?? null;
 		conversation.restorationError = error;
 		if (data.effectiveConfig)
 			conversation.effectiveConfig = data.effectiveConfig;
 		conversation.generations.length = 0;
 		const entries = session?.getEntries() ?? [];
-		const boundary = (id: string | null) =>
-			id === null ? 0 : entries.findIndex((entry) => entry.id === id) + 1;
+		const boundaries = session
+			? generationEntryOffsets(entries, data.generations)
+			: data.generations.map(() => 0);
 		for (const [index, item] of data.generations.entries()) {
 			const generation = conversation.newGeneration(
 				item.generation,
@@ -795,12 +814,8 @@ export class Conversation {
 								: {}),
 						};
 			Object.assign(generation.receipts, item.receipts);
-			const next = data.generations[index + 1];
 			generation.activity.restore(
-				entries.slice(
-					boundary(item.entryStart),
-					next ? boundary(next.entryStart) : undefined,
-				),
+				entries.slice(boundaries[index], boundaries[index + 1]),
 				item.status.kind === "done" ? item.cost : undefined,
 			);
 			conversation.generations.push(generation);
@@ -952,7 +967,8 @@ export class Conversation {
 		if (this.stopping?.generation === generation) {
 			this.unsubscribe?.();
 			this.unsubscribe = undefined;
-			this.session = undefined;
+			// Keep ownership for shutdown disposal, but never reuse an unresponsive session.
+			this.sessionAbandoned = true;
 			this.stopping = undefined;
 			this.listener(this, "status");
 		}

@@ -193,7 +193,7 @@ export class SubagentRuntime {
 		data: ConversationCheckpoint,
 		session?: SessionManager,
 		error?: string,
-	): Promise<void> {
+	): Promise<ConversationCheckpoint> {
 		const listener: ConversationUpdateListener = (changed, kind) =>
 			this.updated(changed, kind);
 		let conversation: Conversation;
@@ -207,7 +207,8 @@ export class SubagentRuntime {
 				listener,
 			);
 		}
-		if (this.conversations.has(conversation.conversationId)) return;
+		const existing = this.conversations.get(conversation.conversationId);
+		if (existing) return existing.checkpoint();
 		const cwd = data.effectiveConfig?.cwd ?? data.requestedConfig.cwd;
 		if (cwd) {
 			await this.prepareSkillCatalog(cwd);
@@ -216,6 +217,7 @@ export class SubagentRuntime {
 		}
 		this.conversationIds.reserve(conversation.conversationId);
 		this.conversations.set(conversation.conversationId, conversation);
+		return conversation.checkpoint();
 	}
 	reserveConversationId(id: ConversationId): void {
 		this.conversationIds.reserve(id);

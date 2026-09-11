@@ -268,6 +268,8 @@ test("shutdown restores active nested work as interrupted without restarting or 
 	await child.completion;
 	expect(f.parent.getEntries()).toHaveLength(entryCount);
 	const restored = f.createRuntime();
+	const updates: string[] = [];
+	restored.onConversationUpdate((_conversation, kind) => updates.push(kind));
 	const second = await f.attach(restored);
 	expect(f.sessions).toHaveLength(2);
 	const conversations = restored.listConversations();
@@ -279,7 +281,109 @@ test("shutdown restores active nested work as interrupted without restarting or 
 			kind: "done",
 			outcome: "interrupted",
 		});
+	expect(updates).toEqual([]);
+	const interrupted = f.parent
+		.getEntries()
+		.slice(entryCount)
+		.map((entry) => parseCheckpoint(entry.data));
+	expect(
+		interrupted.map((checkpoint) => checkpoint.generations[0]!.status),
+	).toEqual(
+		conversations.map((conversation) => conversation.generations[0]!.status),
+	);
+	expect(interrupted).toHaveLength(2);
 	await second.stop();
+	const nextRuntime = f.createRuntime();
+	const reopened = SessionManager.open(f.parent.getSessionFile()!);
+	const beforeReopen = reopened.getEntries().length;
+	const third = await f.attach(nextRuntime, reopened);
+	expect(
+		nextRuntime
+			.listConversations()
+			.map((conversation) => conversation.generations[0]!.status),
+	).toEqual(
+		conversations.map((conversation) => conversation.generations[0]!.status),
+	);
+	expect(reopened.getEntries()).toHaveLength(beforeReopen);
+	await third.stop();
+});
+
+test.each(["identity", "boundary"])(
+	"lazy resume revalidates %s after the modal restored the file",
+	async (damage) => {
+		const f = await fixture();
+		const runtime = f.createRuntime();
+		const first = await f.attach(runtime);
+		await runtime.startTasks(first.ctx, [
+			{ kind: "spawn", agent: "worker", label: "task", prompt: "first" },
+		]).completion;
+		const id = runtime.listConversations()[0]!.conversationId;
+		const collected = runtime.bindSubagentJoin([id]);
+		collected.markCollected("model");
+		collected.release();
+		const file = runtime.conversation(id).sessionFile!;
+		await first.stop();
+		const restored = f.createRuntime();
+		const second = await f.attach(restored);
+		expect(restored.conversation(id).resumeAllowed).toBe(true);
+		const replacement =
+			damage === "identity"
+				? await readFile(f.parent.getSessionFile()!, "utf8")
+				: `${(await readFile(file, "utf8")).trimEnd().split("\n").slice(0, -1).join("\n")}\n`;
+		await writeFile(file, replacement);
+		await restored.startTasks(second.ctx, [
+			{ kind: "resume", subagentId: id, prompt: "must not run" },
+		]).completion;
+		expect(restored.conversation(id).generations.at(-1)!.status).toMatchObject({
+			kind: "done",
+			outcome: "error",
+			error: expect.stringContaining(
+				damage === "identity"
+					? "does not match"
+					: "Missing generation boundary",
+			),
+		});
+		expect(f.sessions).toHaveLength(1);
+		expect(await readFile(file, "utf8")).toBe(replacement);
+		await second.stop();
+	},
+);
+
+test("invalid boundaries and legacy identity remain visible as unavailable subagents", async () => {
+	const f = await fixture();
+	const original = f.createRuntime();
+	const first = await f.attach(original);
+	await original.startTasks(first.ctx, [
+		{ kind: "spawn", agent: "worker", label: "task", prompt: "first" },
+	]).completion;
+	const checkpoint = f.allocated[0]!.checkpoint();
+	await first.stop();
+	for (const legacy of [false, true]) {
+		const invalid = {
+			...checkpoint,
+			...(legacy
+				? { sessionId: undefined }
+				: {
+						generations: checkpoint.generations.map((generation) => ({
+							...generation,
+							entryStart: "absent-boundary",
+						})),
+					}),
+		};
+		f.parent.appendCustomEntry(
+			CHECKPOINT_TYPE,
+			JSON.parse(JSON.stringify(invalid)),
+		);
+		const restored = f.createRuntime();
+		const next = await f.attach(restored);
+		const snapshot = restored.listConversations()[0]!;
+		expect(snapshot.conversationId).toBe(checkpoint.conversationId);
+		expect(snapshot.restorationError).toContain(
+			legacy ? "no child session ID" : "Missing generation boundary",
+		);
+		expect(snapshot.resumeAllowed).toBe(false);
+		await next.stop();
+	}
 });
 
 test("queued follow-ups restore without taking the preceding generation's trace", async () => {
@@ -294,7 +398,10 @@ test("queued follow-ups restore without taking the preceding generation's trace"
 	agent.beginResume("queued follow-up");
 	const restored = Conversation.restore(
 		parseCheckpoint(agent.checkpoint()),
-		readSavedSession(agent.snapshot().sessionFile!),
+		readSavedSession(
+			agent.snapshot().sessionFile!,
+			agent.checkpoint().sessionId,
+		),
 		undefined,
 		() => {},
 	);
@@ -348,7 +455,9 @@ test("restore toggle and parent identity isolate saved subagents, damaged files 
 	);
 	expect(damaged.listConversations()[0]!.resumeAllowed).toBe(false);
 	expect(await readFile(checkpoint.sessionFile!, "utf8")).toBe("broken JSON");
-	expect(() => readSavedSession(join(f.dir, "missing.jsonl"))).toThrow();
+	expect(() =>
+		readSavedSession(join(f.dir, "missing.jsonl"), checkpoint.sessionId),
+	).toThrow();
 	await expect(readFile(join(f.dir, "missing.jsonl"))).rejects.toThrow();
 	expect(() =>
 		parseCheckpoint({
