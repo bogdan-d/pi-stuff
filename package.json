@@ -38,6 +38,8 @@
 		],
 		"skills": [
 			"skills",
+			"!skills/adversarial-qa",
+			"!skills/agent-native-hardening",
 			"!skills/chrome-cdp"
 		]
 	},
