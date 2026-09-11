@@ -11,14 +11,13 @@ import {
 	getOwnCredential,
 	normalizeStoredCredential,
 	parseAccountName,
-	type StoredOAuthCredential,
+	type StoredCredential,
 } from "./account-store.js";
 import {
 	type AccountProviderAdapter,
 	type AccountProviderId,
 	createBuiltinProviderAdapters,
 	createOAuthInteraction,
-	SUPPORTED_PROVIDER_IDS,
 } from "./oauth.js";
 import {
 	type EnsureActiveProviderAuthResult,
@@ -37,6 +36,7 @@ export {
 	type ProviderAccountsData,
 	parseAccountName,
 	parseAccountsData,
+	type StoredCredential,
 	type StoredOAuthCredential,
 } from "./account-store.js";
 
@@ -84,6 +84,37 @@ export default function accountsExtension(
 	>();
 	let sessionGeneration = 0;
 	let menuController = new AbortController();
+
+	const discoverProviders = (ctx: ExtensionContext): void => {
+		const registry = ctx.modelRegistry;
+		if (!registry.getProvider) return;
+		const ids = new Set([
+			...adapters.keys(),
+			...registry.getAll().map((model) => model.provider),
+			...(registry.getRegisteredProviderIds?.() ?? []),
+		]);
+		for (const id of ids) {
+			const provider = registry.getProvider(id);
+			const apiKey = provider?.auth.apiKey;
+			if (!provider || !apiKey?.login || apiKey.name === "Selected account")
+				continue;
+			const existing = adapters.get(id);
+			if (existing) {
+				existing.apiKey ??= apiKey;
+			} else {
+				const adapter: AccountProviderAdapter = {
+					id,
+					displayName: provider.name,
+					apiKey,
+					requiresApiKeyBridge: false,
+				};
+				adapters.set(id, adapter);
+				coordinators.set(id, new RuntimeAuthCoordinator(pi, adapter));
+			}
+		}
+	};
+	const toProviderId = (value: string | undefined): string | undefined =>
+		value && adapters.has(value) ? value : undefined;
 
 	const syncProvider = (
 		providerId: AccountProviderId,
@@ -139,7 +170,8 @@ export default function accountsExtension(
 	};
 
 	const syncAll = async (ctx: ExtensionContext): Promise<void> => {
-		for (const provider of providers) {
+		discoverProviders(ctx);
+		for (const provider of adapters.values()) {
 			const result = await syncProvider(provider.id, ctx);
 			if (result.status === "error") {
 				ctx.ui.notify(
@@ -156,6 +188,7 @@ export default function accountsExtension(
 		store,
 		adapters,
 		syncProvider,
+		discoverProviders,
 		() => {
 			const generation = sessionGeneration;
 			return {
@@ -181,12 +214,14 @@ export default function accountsExtension(
 	});
 
 	pi.on("model_select", async (event, ctx) => {
+		discoverProviders(ctx);
 		const providerId = toProviderId(event.model.provider);
 		if (providerId) await syncProvider(providerId, ctx, event.model);
 		else updateStatus(ctx, results, event.model);
 	});
 
 	pi.on("before_agent_start", async (_event, ctx) => {
+		discoverProviders(ctx);
 		abortProviders.clear();
 		const providerId = toProviderId(ctx.model?.provider);
 		if (!providerId) return;
@@ -243,11 +278,13 @@ function createAccountCommand(
 		providerId: AccountProviderId,
 		ctx: ExtensionContext,
 	) => Promise<EnsureActiveProviderAuthResult>,
+	discoverProviders: (ctx: ExtensionContext) => void,
 	getMenuOwner: () => { signal: AbortSignal; isCurrent(): boolean },
 ) {
 	return {
-		description: "Open the interactive subscription account manager",
+		description: "Manage named OAuth and API-key accounts",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			discoverProviders(ctx);
 			await showAccountsMenu(
 				pi,
 				ctx,
@@ -269,7 +306,7 @@ type ProviderMenuState = {
 	id: AccountProviderId;
 	adapter: AccountProviderAdapter;
 	active: string | undefined;
-	accounts: Record<string, StoredOAuthCredential>;
+	accounts: Record<string, StoredCredential>;
 };
 
 async function showAccountsMenu(
@@ -384,11 +421,13 @@ async function showAccountsMenu(
 				.find((name) => name === stripActiveMarker(accountOption));
 			if (!accountName) return;
 			await switchAccount(
+				pi,
 				ctx,
 				store,
 				provider.adapter,
 				accountName,
 				syncProvider,
+				owner,
 			);
 			return;
 		}
@@ -428,7 +467,7 @@ async function readProviderMenuStates(
 	adapters: Map<AccountProviderId, AccountProviderAdapter>,
 ): Promise<Map<AccountProviderId, ProviderMenuState>> {
 	const states = new Map<AccountProviderId, ProviderMenuState>();
-	for (const id of SUPPORTED_PROVIDER_IDS) {
+	for (const id of adapters.keys()) {
 		const state = await store.readProviderAsync(id);
 		states.set(id, {
 			id,
@@ -447,9 +486,16 @@ function formatAccountsMenuTitle(
 ): string {
 	if (!hasAnyStoredAccount)
 		return "Accounts\n\nNo saved accounts yet.\n\nWhat do you want to do?";
-	const activeLines = sortedProviderStates(states).map(
-		(state) => `  ${state.adapter.displayName}: ${state.active ?? "default"}`,
-	);
+	const activeLines = sortedProviderStates(states)
+		.filter(
+			(state) =>
+				state.adapter.oauth ||
+				accountNames(state).length > 0 ||
+				state.id === ctx.model?.provider,
+		)
+		.map(
+			(state) => `  ${state.adapter.displayName}: ${state.active ?? "default"}`,
+		);
 	return [
 		"Accounts",
 		"",
@@ -612,6 +658,8 @@ function providerDisplayName(providerId: AccountProviderId): string {
 			return "GitHub Copilot";
 		case "openai-codex":
 			return "OpenAI Codex";
+		default:
+			return providerId;
 	}
 }
 
@@ -650,11 +698,43 @@ async function loginAccount(
 		`Starting ${adapter.displayName} login for "${parsed.name}".`,
 		"info",
 	);
+	const secrets: string[] = [];
 	try {
+		const oauthLogin = adapter.oauth?.login.bind(adapter.oauth);
+		const apiKeyLogin = adapter.apiKey?.login?.bind(adapter.apiKey);
+		const methods = [
+			...(oauthLogin ? [{ label: "OAuth", login: oauthLogin }] : []),
+			...(apiKeyLogin
+				? [
+						{
+							label: "API key",
+							login: (interaction: ReturnType<typeof createOAuthInteraction>) =>
+								apiKeyLogin({
+									...interaction,
+									signal: interaction.signal ?? new AbortController().signal,
+								}),
+						},
+					]
+				: []),
+		];
+		const methodName =
+			methods.length > 1
+				? await ctx.ui.select(
+						`Login method for ${adapter.displayName}`,
+						methods.map((method) => method.label),
+					)
+				: methods[0]?.label;
+		const method = methods.find((method) => method.label === methodName);
+		if (!method || !isCurrent()) return;
+		const interaction = createOAuthInteraction(ctx, adapter.displayName);
+		const prompt = interaction.prompt;
+		interaction.prompt = async (input) => {
+			const value = await prompt(input);
+			if (input.type === "secret") secrets.push(value);
+			return value;
+		};
 		const credential = normalizeStoredCredential(
-			await adapter.oauth.login(
-				createOAuthInteraction(ctx, adapter.displayName),
-			),
+			await method.login(interaction),
 			parsed.name,
 		);
 		if (!isCurrent()) return;
@@ -678,13 +758,14 @@ async function loginAccount(
 	} catch (error) {
 		if (!isCurrent()) return;
 		ctx.ui.notify(
-			`${adapter.displayName} login failed: ${redactTokenText(errorMessage(error))}`,
+			`${adapter.displayName} login failed: ${redactTokenText(errorMessage(error), secrets)}`,
 			"error",
 		);
 	}
 }
 
 async function switchAccount(
+	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	store: AccountStore,
 	adapter: AccountProviderAdapter,
@@ -693,6 +774,7 @@ async function switchAccount(
 		providerId: AccountProviderId,
 		ctx: ExtensionContext,
 	) => Promise<EnsureActiveProviderAuthResult>,
+	owner: { signal: AbortSignal; isCurrent(): boolean },
 ): Promise<void> {
 	const name = nameArg.trim();
 	if (!name) {
@@ -715,6 +797,8 @@ async function switchAccount(
 			return;
 		}
 		ctx.ui.notify(`Using default Pi ${adapter.displayName} login.`, "info");
+		if (result.status === "inactive")
+			await selectProviderModel(pi, ctx, adapter, owner);
 		return;
 	}
 	const parsed = parseAccountName(name);
@@ -737,6 +821,49 @@ async function switchAccount(
 		formatActivationMessage("Activated", adapter, parsed.name, result),
 		result.status === "active" ? "info" : "error",
 	);
+	if (result.status === "active" && result.accountName === parsed.name) {
+		await selectProviderModel(pi, ctx, adapter, owner);
+	}
+}
+
+async function selectProviderModel(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	adapter: AccountProviderAdapter,
+	owner: { signal: AbortSignal; isCurrent(): boolean },
+): Promise<void> {
+	if (!owner.isCurrent() || ctx.model?.provider === adapter.id) return;
+	const models = ctx.modelRegistry
+		.getAvailable()
+		.filter((model) => model.provider === adapter.id)
+		.sort((left, right) => left.id.localeCompare(right.id));
+	if (!models.length) {
+		ctx.ui.notify(
+			`No available ${adapter.displayName} models. The account is selected, but the current model is unchanged.`,
+			"warning",
+		);
+		return;
+	}
+	const id = await ctx.ui.select(
+		`Select ${adapter.displayName} model`,
+		models.map((model) => model.id),
+		{ signal: owner.signal },
+	);
+	if (!owner.isCurrent()) return;
+	const model = models.find((model) => model.id === id);
+	if (!model) {
+		ctx.ui.notify(
+			"Account selected. Model switch cancelled; current model unchanged.",
+			"info",
+		);
+		return;
+	}
+	if (!(await pi.setModel(model))) {
+		ctx.ui.notify(
+			`Could not select ${adapter.displayName}/${model.id}. The account remains selected.`,
+			"error",
+		);
+	}
 }
 
 async function removeAccount(
@@ -795,10 +922,6 @@ function validateProviderSet(
 			throw new Error(`Duplicate account provider: ${provider.id}`);
 		ids.add(provider.id);
 	}
-	for (const id of SUPPORTED_PROVIDER_IDS) {
-		if (!ids.has(id))
-			throw new Error(`Missing required account provider: ${id}`);
-	}
 }
 
 function requireAdapter(
@@ -813,11 +936,7 @@ function requireAdapter(
 function toProviderId(
 	value: string | undefined,
 ): AccountProviderId | undefined {
-	return value && isAccountProviderId(value) ? value : undefined;
-}
-
-function isAccountProviderId(value: string): value is AccountProviderId {
-	return (SUPPORTED_PROVIDER_IDS as readonly string[]).includes(value);
+	return value || undefined;
 }
 
 function isDefaultPiLoginArg(value: string): boolean {
@@ -855,7 +974,7 @@ async function selectedCredential(
 	store: AccountStore,
 	providerId: AccountProviderId,
 	result: EnsureActiveProviderAuthResult,
-): Promise<StoredOAuthCredential | undefined> {
+): Promise<StoredCredential | undefined> {
 	if (result.status === "inactive") return undefined;
 	try {
 		const state = await store.readProviderAsync(providerId);
@@ -872,7 +991,8 @@ async function authIdentity(
 	if (result.status === "inactive") return "default";
 	if (result.status === "error") return `error:${result.accountName}`;
 	const state = await store.readProviderAsync(result.providerId);
-	return `${result.accountName}:${getOwnCredential(state.accounts, result.accountName)?.access ?? "missing"}`;
+	const credential = getOwnCredential(state.accounts, result.accountName);
+	return `${result.accountName}:${credential?.type === "api_key" ? credential.key : (credential?.access ?? "missing")}`;
 }
 
 function updateStatus(

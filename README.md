@@ -13,7 +13,7 @@ pi-stuff/
 ├── biome.json            # formatter (tabs, double quotes)
 ├── extensions/
 │   ├── *.ts              # single-file extensions (26)
-│   ├── accounts/         # named subscription OAuth account switching
+│   ├── accounts/         # named OAuth and API-key account switching
 │   ├── dynamic-resources/  # index.ts + skill/data
 │   ├── todo/              # phased, session-aware todo planning
 │   └── subagent/           # current subagent implementation
@@ -42,10 +42,21 @@ package's active extension globs.
 
 ### Accounts
 
-`extensions/accounts` provides the `/accounts` command for managing named
-subscription OAuth accounts across OpenAI Codex, Anthropic, and GitHub Copilot.
-It stores credentials in `~/.pi/agent/pi-accounts.json`, refreshes them under a
-file lock, and keeps each provider's active account independent.
+`extensions/accounts` provides `/accounts` for switching between named OAuth
+and API-key accounts. OAuth supports OpenAI Codex, Anthropic, and GitHub Copilot.
+API-key providers are discovered from Pi's interactive login support, including
+Z.AI for GLM. Add each key with **Login new account**, give it a name, then use
+the provider's switch action when you want another key. Switching to another
+provider opens its model picker. Switching accounts within the current provider
+keeps your model. Cancelling the picker leaves the account selected but keeps
+the current model. Providers supporting both login methods offer an OAuth or
+API-key choice.
+
+Credentials stay in the private `~/.pi/agent/pi-accounts.json` file. OAuth
+refresh runs under a file lock. Each provider has an independent active account.
+Selecting `default` restores Pi's own login without overwriting it. Switching
+is manual, with no automatic quota-based rotation. API-key accounts accept
+literal keys, not provider environment settings or ambient-only authentication.
 
 The extension is loaded automatically by the package's
 `extensions/*/index.ts` manifest entry. Its tests live under

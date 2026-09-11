@@ -12,7 +12,7 @@ import {
 import { basename, dirname, join } from "node:path";
 import type { OAuthCredential } from "@earendil-works/pi-ai";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { type AccountProviderId, SUPPORTED_PROVIDER_IDS } from "./oauth.js";
+import type { AccountProviderId } from "./oauth.js";
 import {
 	type AccountStorageBackend,
 	FileAccountStorageBackend,
@@ -27,10 +27,13 @@ const MIGRATION_LOCK_TIMEOUT_MS = 30_000;
 const MIGRATION_TEMP_STALE_MS = 30_000;
 
 export type StoredOAuthCredential = OAuthCredential;
+export type StoredCredential =
+	| StoredOAuthCredential
+	| { type: "api_key"; key: string };
 
 export type ProviderAccountsData = {
 	active?: string;
-	accounts: Record<string, StoredOAuthCredential>;
+	accounts: Record<string, StoredCredential>;
 };
 
 export type AccountsData = {
@@ -172,10 +175,8 @@ function normalizeAccountsData(value: unknown): AccountsData {
 		throw new Error("Invalid accounts data: providers must be an object.");
 	const providers = Object.create(null) as Record<string, ProviderAccountsData>;
 	for (const [providerId, state] of Object.entries(value["providers"])) {
-		if (!isAccountProviderId(providerId)) {
-			throw new Error(
-				`Invalid accounts data: unsupported provider "${providerId}".`,
-			);
+		if (!providerId.trim() || /[\r\n\0]/.test(providerId)) {
+			throw new Error("Invalid accounts data: invalid provider ID.");
 		}
 		Object.defineProperty(providers, providerId, {
 			configurable: true,
@@ -193,7 +194,7 @@ function normalizeProviderState(value: unknown): ProviderAccountsData {
 	const active = parseActiveAccount(value["active"]);
 	if (!isRecord(value["accounts"]))
 		throw new Error("Invalid accounts data: accounts must be an object.");
-	const accounts = Object.create(null) as Record<string, StoredOAuthCredential>;
+	const accounts = Object.create(null) as Record<string, StoredCredential>;
 	for (const [name, credential] of Object.entries(value["accounts"])) {
 		const parsedName = parseAccountName(name);
 		if (!parsedName.ok)
@@ -211,16 +212,30 @@ function normalizeProviderState(value: unknown): ProviderAccountsData {
 export function normalizeStoredCredential(
 	value: unknown,
 	accountName: string,
-): StoredOAuthCredential {
+): StoredCredential {
 	const cloned = cloneJsonValue(value, new Set(), `${accountName} credential`);
 	if (!isRecord(cloned)) {
 		throw new Error(
 			`Invalid accounts data: ${accountName} credential must be an object.`,
 		);
 	}
+	if (cloned["type"] === "api_key") {
+		const key = cloned["key"];
+		if (typeof key !== "string" || !key.trim() || /[\r\n\0]/.test(key)) {
+			throw new Error(
+				`Invalid accounts data: ${accountName} API key must be non-empty and single-line.`,
+			);
+		}
+		if (cloned["env"] !== undefined) {
+			throw new Error(
+				"API-key accounts do not support provider environment settings. Use Pi's default login for those providers.",
+			);
+		}
+		return { type: "api_key", key: key.trim() };
+	}
 	if (cloned["type"] !== undefined && cloned["type"] !== "oauth") {
 		throw new Error(
-			`Invalid accounts data: ${accountName} credential type must be oauth.`,
+			`Invalid accounts data: ${accountName} credential type must be oauth or api_key.`,
 		);
 	}
 	if (typeof cloned["access"] !== "string" || !cloned["access"]) {
@@ -507,7 +522,7 @@ function emptyAccountsData(): AccountsData {
 
 function emptyProviderState(): ProviderAccountsData {
 	return {
-		accounts: Object.create(null) as Record<string, StoredOAuthCredential>,
+		accounts: Object.create(null) as Record<string, StoredCredential>,
 	};
 }
 
@@ -540,9 +555,9 @@ export function defineOwn<T>(
 }
 
 export function getOwnCredential(
-	accounts: Record<string, StoredOAuthCredential>,
+	accounts: Record<string, StoredCredential>,
 	name: string,
-): StoredOAuthCredential | undefined {
+): StoredCredential | undefined {
 	return Object.hasOwn(accounts, name) ? accounts[name] : undefined;
 }
 
@@ -554,10 +569,6 @@ function parseActiveAccount(value: unknown): string | undefined {
 	if (!parsed.ok)
 		throw new Error("Invalid accounts data: active account name is invalid.");
 	return parsed.name;
-}
-
-function isAccountProviderId(value: string): value is AccountProviderId {
-	return (SUPPORTED_PROVIDER_IDS as readonly string[]).includes(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

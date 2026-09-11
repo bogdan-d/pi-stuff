@@ -105,6 +105,8 @@ function runtimeHarness(mock: ReturnType<typeof createMockPi>) {
 		getRegisteredProviderConfig: (provider: string) =>
 			mock.providers.get(provider),
 		getApiKeyForProvider: async (provider: string) => keys.get(provider),
+		getAvailable: () =>
+			registry.getAll().filter((model) => keys.has(model.provider)),
 		getAll: () =>
 			models.map((model) => ({
 				...model,
@@ -434,7 +436,12 @@ test("switch another provider account selects provider before account", async ()
 			modelRegistry: registry,
 		},
 		{
-			selections: ["Switch another provider’s account", "OpenAI Codex", "work"],
+			selections: [
+				"Switch another provider’s account",
+				"OpenAI Codex",
+				"work",
+				"codex",
+			],
 		},
 	);
 
@@ -443,6 +450,10 @@ test("switch another provider account selects provider before account", async ()
 	assert.equal((await store.readProviderAsync("openai-codex")).active, "work");
 	assert.equal(keys.get("openai-codex"), "access-codex");
 	assert.deepEqual(selectCalls[1]?.options, ["OpenAI Codex"]);
+	assert.equal(
+		(mock.setModels.at(-1) as { provider: string }).provider,
+		"openai-codex",
+	);
 });
 
 test("provider accounts activate independently and default clears only one provider", async () => {

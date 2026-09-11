@@ -1,4 +1,5 @@
 import {
+	type ApiKeyAuth,
 	type AuthEvent,
 	type AuthInteraction,
 	type AuthPrompt,
@@ -8,13 +9,7 @@ import {
 } from "@earendil-works/pi-ai";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
-export const SUPPORTED_PROVIDER_IDS = [
-	"anthropic",
-	"github-copilot",
-	"openai-codex",
-] as const;
-
-export type AccountProviderId = (typeof SUPPORTED_PROVIDER_IDS)[number];
+export type AccountProviderId = string;
 
 export interface ProviderOwnedOAuth {
 	login(interaction: AuthInteraction): Promise<OAuthCredential>;
@@ -28,7 +23,8 @@ export interface ProviderOwnedOAuth {
 export type AccountProviderAdapter = {
 	id: AccountProviderId;
 	displayName: string;
-	oauth: ProviderOwnedOAuth;
+	oauth?: ProviderOwnedOAuth;
+	apiKey?: ApiKeyAuth;
 	requiresApiKeyBridge: boolean;
 	defaultModelId?: string;
 	invalidateConnections?: (sessionId?: string) => unknown | Promise<unknown>;
@@ -101,6 +97,14 @@ function createLazyProviderOwnedOAuth(
 			(await load()).refresh(credential, signal),
 		toAuth: async (credential) => (await load()).toAuth(credential),
 	};
+}
+
+export function requireOAuth(
+	provider: AccountProviderAdapter,
+): ProviderOwnedOAuth {
+	if (!provider.oauth)
+		throw new Error(`${provider.displayName} does not support OAuth accounts.`);
+	return provider.oauth;
 }
 
 async function loadProviderOwnedOAuth(
