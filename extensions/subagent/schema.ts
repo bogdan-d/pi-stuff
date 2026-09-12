@@ -26,7 +26,12 @@ export const SUBAGENT_STATUSES = [
 
 export const SpawnTaskSchema = Type.Object(
 	{
-		agent: Type.String({ description: "Agent definition name." }),
+		agent: Type.Optional(
+			Type.String({
+				description:
+					"Name from agents(); omit for the built-in general-purpose agent",
+			}),
+		),
 		prompt: Type.String(),
 		label: Type.String({ description: "3-5 words describing what, not how." }),
 		skills: Type.Optional(Type.Array(Type.String())),
@@ -381,7 +386,10 @@ export function parseSpawnTask(raw: unknown): ParsedSpawnRequest {
 	});
 	const extra = Object.keys(task).find((key) => !SPAWN_TASK_KEYS.has(key));
 	if (extra) return error(`Spawn task property ${extra} is not allowed.`);
-	if (typeof task["agent"] !== "string" || !task["agent"].trim())
+	if (
+		task["agent"] !== undefined &&
+		(typeof task["agent"] !== "string" || !task["agent"].trim())
+	)
 		return error("Spawn task agent must be a non-empty string.");
 	const promptError = validateNonBlank(task["prompt"], "Spawn task prompt");
 	if (promptError) return error(promptError.error);
@@ -408,7 +416,7 @@ export function parseSpawnTask(raw: unknown): ParsedSpawnRequest {
 		);
 	return {
 		kind: "spawn",
-		agent: task["agent"],
+		...(task["agent"] !== undefined ? { agent: task["agent"] as string } : {}),
 		prompt: task["prompt"] as string,
 		label: task["label"] as string,
 		...(task["skills"] !== undefined

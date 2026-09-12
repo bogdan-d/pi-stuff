@@ -28,7 +28,7 @@ export function isModelThinkingLevel(
 	);
 }
 
-export type AgentSource = "user" | "project";
+export type AgentSource = "user" | "project" | "builtin";
 
 export interface AgentDefinition {
 	name: string;
@@ -41,6 +41,14 @@ export interface AgentDefinition {
 	source: AgentSource;
 	sourcePath?: string;
 }
+
+export const DEFAULT_AGENT: AgentDefinition = {
+	name: "general-purpose",
+	description: "General-purpose agent used when spawn omits agent.",
+	source: "builtin",
+	systemPrompt:
+		"You are a general-purpose subagent. Complete the delegated task using the available tools. You do not have the parent conversation; use the supplied prompt and filesystem for context. Follow the task's scope and constraints, preserve unrelated work, and report your findings or changes and any verification performed.",
+};
 
 export type AgentDefinitionSummary = Readonly<
 	Pick<AgentDefinition, "name" | "description" | "source" | "sourcePath">

@@ -3,7 +3,11 @@ import type {
 	ExtensionContext,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import { AgentRegistry, resolveRequestedConfig } from "./agents.js";
+import {
+	AgentRegistry,
+	DEFAULT_AGENT,
+	resolveRequestedConfig,
+} from "./agents.js";
 import type { ConversationCheckpoint } from "./checkpoint.js";
 import {
 	type CanonicalLiveSubagent,
@@ -292,7 +296,10 @@ export class SubagentRuntime {
 		const cwds = new Set<string>();
 		for (const task of tasks) {
 			if (task.kind !== "spawn") continue;
-			const definition = this.registry.agents.get(task.agent);
+			const definition =
+				task.agent === undefined
+					? DEFAULT_AGENT
+					: this.registry.agents.get(task.agent);
 			if (!definition) continue;
 			const requested = resolveRequestedConfig(definition, task);
 			const cwd = resolveTaskCwd(ctx.cwd, requested.cwd);
@@ -419,8 +426,14 @@ export class SubagentRuntime {
 		caller: SubagentCaller | undefined,
 		initiatedBy: GenerationInitiator,
 	): Reservation {
-		const definition = this.registry.agents.get(task.agent);
-		if (!definition) return { error: `Unknown agent: ${task.agent}.` };
+		const definition =
+			task.agent === undefined
+				? DEFAULT_AGENT
+				: this.registry.agents.get(task.agent);
+		if (!definition)
+			return {
+				error: `Unknown agent: ${task.agent}. Available agents: ${[...this.registry.agents.keys()].sort().join(", ") || "none"}. Omit agent to use the built-in general-purpose agent.`,
+			};
 		const requested = resolveRequestedConfig(definition, task);
 		const model = resolveModel(requested.model, ctx.model, ctx.modelRegistry);
 		if (!model.ok) return { error: model.error };

@@ -4,7 +4,11 @@ import {
 	type ExtensionContext,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { type AgentRegistry, listAgentDefinitions } from "./agents.js";
+import {
+	type AgentRegistry,
+	DEFAULT_AGENT,
+	listAgentDefinitions,
+} from "./agents.js";
 import {
 	type CanonicalLiveSubagent,
 	type FailureProjectionMode,
@@ -728,7 +732,7 @@ function projectGenerationReceipt(
 					...(task.label ? { label: task.label } : {}),
 					...(task.subagentId ? { subagentId: task.subagentId } : {}),
 				}
-			: { agent: task.agent, label: task.label };
+			: { ...(task.agent ? { agent: task.agent } : {}), label: task.label };
 	return { ok: false, ...identity, error: outcome.error };
 }
 
@@ -763,7 +767,10 @@ function renderDispatchItems(
 			: undefined;
 		const identity =
 			task.kind === "spawn"
-				? { agent: task.agent, label: task.label }
+				? {
+						agent: conversation?.agent.name ?? task.agent ?? DEFAULT_AGENT.name,
+						label: task.label,
+					}
 				: {
 						...(conversation?.agent.name !== undefined
 							? { agent: conversation.agent.name }

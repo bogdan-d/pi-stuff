@@ -72,7 +72,7 @@ const checkpoint = Type.Object({
 		name: Type.String(),
 		description: Type.String(),
 		systemPrompt: Type.String(),
-		source: StringEnum(["user", "project"] as const),
+		source: StringEnum(["user", "project", "builtin"] as const),
 		sourcePath: Type.Optional(Type.String()),
 	}),
 	requestedConfig: Type.Object(execution),

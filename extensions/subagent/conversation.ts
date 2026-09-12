@@ -535,7 +535,7 @@ export class Conversation {
 		this.rootSessionId = options.rootSessionId;
 		this.definition = definition;
 		this.listener = listener;
-		this.agentName = spawn.agent;
+		this.agentName = definition.name;
 		this.label = spawn.label;
 		this.parentConversationId = options.parentConversationId;
 		this.resolvedSkillBlocks = options.resolvedSkillBlocks;
