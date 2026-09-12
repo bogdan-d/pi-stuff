@@ -70,10 +70,10 @@ export function registerSubagentsCommand(
 								initialPage,
 								agents: agentRegistry ? [...agentRegistry.agents.values()] : [],
 								settings,
-								models:
-									ctx.modelRegistry
-										?.getAll()
-										.map((model) => `${model.provider}/${model.id}`) ?? [],
+								models: (ctx.scopedModels?.length
+									? ctx.scopedModels.map(({ model }) => model)
+									: (ctx.modelRegistry?.getAvailable() ?? [])
+								).map((model) => `${model.provider}/${model.id}`),
 								notify: (message, level) => notify(ctx, message, level as any),
 								onSettingsChange: (change) => {
 									settings = applySubagentSettingsChange(settings, change);

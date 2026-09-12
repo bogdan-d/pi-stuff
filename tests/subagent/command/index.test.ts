@@ -40,6 +40,7 @@ describe("subagents command registration", () => {
 		expect(shortcut.description).toBe("Open subagent manager");
 
 		const rendered: string[] = [];
+		const modelLists: string[][] = [];
 		const custom = mock(async (factory: any) => {
 			const component = factory(
 				{ requestRender() {} },
@@ -48,19 +49,33 @@ describe("subagents command registration", () => {
 				() => {},
 			);
 			rendered.push(component.render(100).join("\n"));
+			modelLists.push(component.options.models);
 		});
 		const ctx = {
 			hasUI: true,
 			cwd: process.cwd(),
+			modelRegistry: {
+				getAll: () => {
+					throw new Error("Do not expose the full catalog");
+				},
+				getAvailable: () => [{ provider: "configured", id: "available" }],
+			},
 			ui: {
 				custom,
 			},
 		};
 		await command.handler("", ctx);
-		await shortcut.handler(ctx);
+		await shortcut.handler({
+			...ctx,
+			scopedModels: [{ model: { provider: "configured", id: "scoped" } }],
+		});
 		await shortcut.handler({ ...ctx, hasUI: false });
 
 		expect(rendered).toHaveLength(2);
+		expect(modelLists).toEqual([
+			["configured/available"],
+			["configured/scoped"],
+		]);
 		expect(custom).toHaveBeenCalledTimes(2);
 		expect(rendered[1]).toBe(rendered[0]);
 	});
