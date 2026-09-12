@@ -667,7 +667,7 @@ test("agent details scroll instead of truncating long descriptions", () => {
 			listConversations: () => [],
 			onConversationUpdate: () => () => {},
 		} as any,
-		{ requestRender: mock(), terminal: { rows: 20 } } as any,
+		{ requestRender: mock(), terminal: { rows: 17 } } as any,
 		{} as any,
 		{} as any,
 		mock(),

@@ -136,7 +136,10 @@ export class SubagentOverlayComponent implements Component, Focusable {
 		this.options = options;
 		this.page = options.initialPage;
 		this.bodyHeight = tui.terminal
-			? Math.max(1, Math.floor(tui.terminal.rows * 0.8) - OVERLAY_CHROME_HEIGHT)
+			? Math.max(
+					1,
+					Math.floor(tui.terminal.rows * 0.95) - OVERLAY_CHROME_HEIGHT,
+				)
 			: DEFAULT_BODY_HEIGHT;
 		const settings =
 			options.settings?.runtime && options.settings?.display

@@ -197,9 +197,9 @@ export function registerSubagentsCommand(
 						overlay: true,
 						overlayOptions: {
 							anchor: "center",
-							width: "90%",
+							width: "95%",
 							minWidth: 56,
-							maxHeight: "80%",
+							maxHeight: "95%",
 						},
 					},
 				);
