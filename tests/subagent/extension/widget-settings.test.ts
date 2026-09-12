@@ -128,6 +128,7 @@ test("captures effective skill metadata without adding it to child prompts", () 
 	const handlers = new Map<string, (event: any) => void>();
 	const setEffectiveSkillCatalog = mock();
 	const runtime = {
+		configure: mock(),
 		scheduler: { setChildTools: mock(), setChildSessionEvent: mock() },
 		setEffectiveSkillCatalog,
 		listConversations: () => [],

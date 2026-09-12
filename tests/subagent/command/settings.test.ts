@@ -1,5 +1,8 @@
 import { expect, mock, test } from "bun:test";
-import { SubagentSettingsComponent } from "../../../extensions/subagent/command/settings.js";
+import {
+	applySubagentSettingsChange,
+	SubagentSettingsComponent,
+} from "../../../extensions/subagent/command/settings.js";
 import { DEFAULT_SUBAGENT_SETTINGS } from "../../../extensions/subagent/settings.js";
 
 test("restore setting stays reachable in short modals and requires session saving", () => {
@@ -44,4 +47,34 @@ test("widget preview dims the editor bars without dimming its placeholder", () =
 		"<dim>│</dim> <text>Ask Pi anything…</text>       <dim>│</dim>",
 	);
 	expect(rendered).not.toContain("<text>│ Ask Pi anything…       │</text>");
+});
+
+test("general-purpose model picker filters, cancels, and saves without changing other defaults", () => {
+	let settings = structuredClone(DEFAULT_SUBAGENT_SETTINGS);
+	const component = new SubagentSettingsComponent(
+		settings,
+		{} as any,
+		undefined,
+		(change) => {
+			settings = applySubagentSettingsChange(settings, change);
+		},
+		() => {},
+		() => {},
+		["test/alpha", "test/beta"],
+	);
+	for (let index = 0; index < 9; index++) component.handleInput("\x1b[B");
+	component.handleInput(" ");
+	component.handleInput("beta");
+	expect(component.render(100, 20).join("\n")).toContain("test/beta");
+	component.handleInput("\x1b");
+	expect(settings.runtime.generalPurposeModel).toBe("inherit");
+	component.handleInput(" ");
+	component.handleInput("beta");
+	component.handleInput("\r");
+	expect(settings.runtime.generalPurposeModel).toBe("test/beta");
+	expect(component.isEditing).toBe(false);
+	component.handleInput("\x1b[B");
+	component.handleInput(" ");
+	expect(settings.runtime.generalPurposeThinking).toBe("inherit");
+	expect(component.render(100, 20).join("\n")).toContain("Inherit parent");
 });

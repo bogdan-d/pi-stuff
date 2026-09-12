@@ -156,6 +156,8 @@ describe("subagents command registration", () => {
 		await handler("settings", ctx);
 
 		expect(configure).toHaveBeenLastCalledWith({
+			generalPurposeModel: "inherit",
+			generalPurposeThinking: "default",
 			saveSessions: true,
 			maxExecuting: 8,
 			maxConversations: 100,

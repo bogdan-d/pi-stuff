@@ -67,6 +67,8 @@ export function registerSubagentPersistence(
 		const settings = await loadSubagentSettings(ctx, settingsStore);
 		onSettings(settings);
 		runtime.configure({
+			generalPurposeModel: settings.runtime.generalPurposeModel,
+			generalPurposeThinking: settings.runtime.generalPurposeThinking,
 			saveSessions: settings.runtime.saveSessions,
 			maxExecuting: settings.runtime.maxConcurrentSubagents,
 			maxConversations: settings.runtime.maxConversations,

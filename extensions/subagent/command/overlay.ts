@@ -63,6 +63,7 @@ const DEFAULT_BODY_HEIGHT = 24;
 const OVERLAY_CHROME_HEIGHT = 6;
 
 export interface OverlayOptions {
+	models?: readonly string[];
 	initialPage: SubagentOverlayPage;
 	agents: readonly AgentDefinition[];
 	settings: SubagentSettings;
@@ -156,6 +157,7 @@ export class SubagentOverlayComponent implements Component, Focusable {
 				this.requestRender();
 			},
 			() => this.requestRender(),
+			options.models,
 		);
 		for (const input of Object.values(this.filters)) {
 			input.onEscape = () => this.setFocus("list");

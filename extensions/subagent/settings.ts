@@ -1,6 +1,20 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+
+export type GeneralPurposeThinking = ModelThinkingLevel | "inherit" | "default";
+export const GENERAL_PURPOSE_THINKING_VALUES: GeneralPurposeThinking[] = [
+	"default",
+	"inherit",
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+];
 
 export type WidgetPlacement = "belowEditor" | "aboveEditor" | "off";
 export type WidgetMode = "summary" | "progress";
@@ -16,6 +30,8 @@ export interface SubagentUiSettings {
 }
 
 export interface SubagentRuntimeSettings {
+	generalPurposeModel: string;
+	generalPurposeThinking: GeneralPurposeThinking;
 	saveSessions: boolean;
 	restoreSubagents: boolean;
 	maxTasksPerCall: number;
@@ -60,6 +76,8 @@ export function createDefaultSubagentSettings(): SubagentSettings {
 	return {
 		...DEFAULT_SUBAGENT_UI_SETTINGS,
 		runtime: {
+			generalPurposeModel: "inherit",
+			generalPurposeThinking: "default",
 			saveSessions: false,
 			restoreSubagents: false,
 			maxTasksPerCall: 8,
@@ -181,6 +199,25 @@ export function normalizeSettings(value: unknown): SubagentSettingsLoadResult {
 
 	const runtime = objectValue(record["runtime"]);
 	if (runtime) {
+		const model = runtime["generalPurposeModel"];
+		if (model !== undefined) {
+			if (
+				typeof model === "string" &&
+				(model === "inherit" || /^[^\s/]+\/\S+$/.test(model))
+			)
+				settings.runtime.generalPurposeModel = model;
+			else
+				warnings.push("Invalid subagent generalPurposeModel; using inherit.");
+		}
+		assignEnum(
+			runtime,
+			"generalPurposeThinking",
+			new Set(GENERAL_PURPOSE_THINKING_VALUES),
+			(value) => {
+				settings.runtime.generalPurposeThinking = value;
+			},
+			warnings,
+		);
 		assignBoolean(
 			runtime,
 			"restoreSubagents",
@@ -406,6 +443,8 @@ export interface PrepareSubagentRuntimeContext
 
 export interface PrepareSubagentRuntimeTarget {
 	configure?(options: {
+		generalPurposeModel?: string;
+		generalPurposeThinking?: GeneralPurposeThinking;
 		saveSessions?: boolean;
 		maxExecuting?: number;
 		maxConversations?: number;
@@ -437,6 +476,8 @@ export async function prepareSubagentRuntime({
 }: PrepareSubagentRuntimeOptions): Promise<SubagentSettings> {
 	const settings = await loadSubagentSettings(ctx, settingsStore);
 	runtime.configure?.({
+		generalPurposeModel: settings.runtime.generalPurposeModel,
+		generalPurposeThinking: settings.runtime.generalPurposeThinking,
 		saveSessions: settings.runtime.saveSessions,
 		maxExecuting: settings.runtime.maxConcurrentSubagents,
 		maxConversations: settings.runtime.maxConversations,

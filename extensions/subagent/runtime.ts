@@ -1,4 +1,5 @@
 import { resolve as resolvePath } from "node:path";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type {
 	ExtensionContext,
 	SessionManager,
@@ -50,6 +51,7 @@ import {
 } from "./identifiers.js";
 import { type GenerationExecutor, GenerationScheduler } from "./scheduler.js";
 import type { ResumeRequest, SpawnRequest, SubagentStatus } from "./schema.js";
+import type { GeneralPurposeThinking } from "./settings.js";
 
 export type { ConversationUpdateListener } from "./conversation.js";
 
@@ -153,6 +155,11 @@ export class SubagentRuntime {
 	readonly registry: AgentRegistry;
 	private maximumConversations: number;
 	private saveSessions = false;
+	private generalPurposeModel = "inherit";
+	private generalPurposeThinking: GeneralPurposeThinking = "default";
+	private getRootThinkingLevel:
+		| (() => ModelThinkingLevel | undefined)
+		| undefined;
 	private readonly shutdownController = new AbortController();
 	private readonly cancellationSettlementMs: number;
 	private readonly loadSkillPaths: (cwd: string) => Promise<readonly string[]>;
@@ -247,11 +254,20 @@ export class SubagentRuntime {
 		return this.maximumConversations;
 	}
 	configure(options: {
+		generalPurposeModel?: string;
+		generalPurposeThinking?: GeneralPurposeThinking;
+		getRootThinkingLevel?: () => ModelThinkingLevel | undefined;
 		saveSessions?: boolean;
 		maxExecuting?: number;
 		maxConversations?: number;
 	}): void {
 		this.executionScheduler.configure(options);
+		if (options.generalPurposeModel !== undefined)
+			this.generalPurposeModel = options.generalPurposeModel;
+		if (options.generalPurposeThinking !== undefined)
+			this.generalPurposeThinking = options.generalPurposeThinking;
+		if (options.getRootThinkingLevel)
+			this.getRootThinkingLevel = options.getRootThinkingLevel;
 		if (options.saveSessions !== undefined)
 			this.saveSessions = options.saveSessions;
 		if (options.maxConversations !== undefined)
@@ -426,10 +442,28 @@ export class SubagentRuntime {
 		caller: SubagentCaller | undefined,
 		initiatedBy: GenerationInitiator,
 	): Reservation {
-		const definition =
+		let definition =
 			task.agent === undefined
 				? DEFAULT_AGENT
 				: this.registry.agents.get(task.agent);
+		if (task.agent === undefined) {
+			const thinking =
+				this.generalPurposeThinking === "inherit"
+					? caller
+						? (caller.conversation.sessionForResume()?.thinkingLevel ??
+							caller.conversation.snapshot().effectiveConfig?.thinking)
+						: this.getRootThinkingLevel?.()
+					: this.generalPurposeThinking === "default"
+						? undefined
+						: this.generalPurposeThinking;
+			definition = {
+				...DEFAULT_AGENT,
+				...(this.generalPurposeModel !== "inherit"
+					? { model: this.generalPurposeModel }
+					: {}),
+				...(thinking !== undefined ? { thinking } : {}),
+			};
+		}
 		if (!definition)
 			return {
 				error: `Unknown agent: ${task.agent}. Available agents: ${[...this.registry.agents.keys()].sort().join(", ") || "none"}. Omit agent to use the built-in general-purpose agent.`,

@@ -70,10 +70,17 @@ export function registerSubagentsCommand(
 								initialPage,
 								agents: agentRegistry ? [...agentRegistry.agents.values()] : [],
 								settings,
+								models:
+									ctx.modelRegistry
+										?.getAll()
+										.map((model) => `${model.provider}/${model.id}`) ?? [],
 								notify: (message, level) => notify(ctx, message, level as any),
 								onSettingsChange: (change) => {
 									settings = applySubagentSettingsChange(settings, change);
 									runtime.configure({
+										generalPurposeModel: settings.runtime.generalPurposeModel,
+										generalPurposeThinking:
+											settings.runtime.generalPurposeThinking,
 										saveSessions: settings.runtime.saveSessions,
 										maxExecuting: settings.runtime.maxConcurrentSubagents,
 										maxConversations: settings.runtime.maxConversations,

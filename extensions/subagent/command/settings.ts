@@ -8,11 +8,13 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 
-import type {
-	CompletionNotifyMode,
-	SubagentSettings,
-	WidgetMode,
-	WidgetPlacement,
+import {
+	type CompletionNotifyMode,
+	GENERAL_PURPOSE_THINKING_VALUES,
+	type GeneralPurposeThinking,
+	type SubagentSettings,
+	type WidgetMode,
+	type WidgetPlacement,
 } from "../settings.js";
 import {
 	isCancelKey,
@@ -23,6 +25,8 @@ import {
 } from "./input.js";
 
 export type SubagentSettingsChange =
+	| { kind: "generalPurposeModel"; value: string }
+	| { kind: "generalPurposeThinking"; value: GeneralPurposeThinking }
 	| { kind: "saveSessions"; value: boolean }
 	| { kind: "restoreSubagents"; value: boolean }
 	| { kind: "widgetPlacement"; value: WidgetPlacement }
@@ -38,6 +42,12 @@ export function applySubagentSettingsChange(
 	change: SubagentSettingsChange,
 ): SubagentSettings {
 	switch (change.kind) {
+		case "generalPurposeModel":
+		case "generalPurposeThinking":
+			return {
+				...settings,
+				runtime: { ...settings.runtime, [change.kind]: change.value },
+			};
 		case "restoreSubagents":
 			return {
 				...settings,
@@ -80,7 +90,11 @@ export function applySubagentSettingsChange(
 	}
 }
 
-type SettingSection = "Interface" | "Notifications" | "Runtime";
+type SettingSection =
+	| "Interface"
+	| "Notifications"
+	| "Runtime"
+	| "General-purpose";
 type SettingId = SubagentSettingsChange["kind"];
 
 interface SettingDefinition {
@@ -96,6 +110,7 @@ export class SubagentSettingsComponent implements Component, Focusable {
 	private readonly items: SettingDefinition[];
 	private selected = 0;
 	private editor: Input | undefined;
+	private selectedModel = 0;
 	private validationError = "";
 	private _focused = false;
 	private readonly theme: Theme;
@@ -111,13 +126,14 @@ export class SubagentSettingsComponent implements Component, Focusable {
 		onChange: (change: SubagentSettingsChange) => void,
 		done: () => void,
 		requestRender: () => void = () => {},
+		models: readonly string[] = [],
 	) {
 		this.theme = theme;
 		this.keybindings = keybindings;
 		this.onChange = onChange;
 		this.done = done;
 		this.requestRender = requestRender;
-		this.items = createSettingDefinitions(settings);
+		this.items = createSettingDefinitions(settings, models);
 	}
 
 	get focused(): boolean {
@@ -159,6 +175,27 @@ export class SubagentSettingsComponent implements Component, Focusable {
 
 	handleInput(data: string): void {
 		if (this.editor) {
+			if (this.items[this.selected]?.id === "generalPurposeModel") {
+				if (
+					isUpKey(data, this.keybindings) ||
+					isDownKey(data, this.keybindings)
+				) {
+					this.selectedModel = Math.max(
+						0,
+						Math.min(
+							this.filteredModels().length - 1,
+							this.selectedModel + (isUpKey(data, this.keybindings) ? -1 : 1),
+						),
+					);
+					this.requestRender();
+					return;
+				}
+				const before = this.editor.getValue();
+				this.editor.handleInput(data);
+				if (this.editor?.getValue() !== before) this.selectedModel = 0;
+				this.requestRender();
+				return;
+			}
 			this.editor.handleInput(data);
 			this.requestRender();
 			return;
@@ -180,8 +217,11 @@ export class SubagentSettingsComponent implements Component, Focusable {
 	private renderIndex(width: number, height: number): string[] {
 		const lines: string[] = [""];
 		let selectedLine = 0;
-		const maxValueWidth = Math.max(
-			...this.items.map((item) => visibleWidth(settingListValue(item))),
+		const maxValueWidth = Math.min(
+			Math.max(8, width - 23),
+			Math.max(
+				...this.items.map((item) => visibleWidth(settingListValue(item))),
+			),
 		);
 		const labelWidth = Math.min(18, Math.max(1, width - 5 - maxValueWidth));
 		let section: SettingSection | undefined;
@@ -238,10 +278,30 @@ export class SubagentSettingsComponent implements Component, Focusable {
 		}
 
 		lines.push(
-			`${this.muted("current")} ${this.accent(item.currentValue)}`,
+			...wrapTextWithAnsi(
+				`${this.muted("current")} ${this.accent(settingValueLabel(item.currentValue))}`,
+				width,
+			),
 			"",
 		);
 		if (this.editor) {
+			if (item.id === "generalPurposeModel") {
+				const models = this.filteredModels();
+				const offset = Math.max(0, this.selectedModel - 2);
+				return [
+					...lines,
+					this.muted("Filter models"),
+					...this.editor.render(width),
+					...models.slice(offset, offset + 5).map((model, index) => {
+						const label = `${offset + index === this.selectedModel ? "›" : " "} ${settingValueLabel(model)}`;
+						return offset + index === this.selectedModel
+							? this.accent(label)
+							: this.muted(label);
+					}),
+					...(models.length ? [] : [this.muted("No matching models")]),
+					this.dim("↑↓ select · Enter saves · Esc cancels"),
+				];
+			}
 			lines.push(
 				this.muted("Enter a positive whole number"),
 				...this.editor
@@ -250,9 +310,14 @@ export class SubagentSettingsComponent implements Component, Focusable {
 			);
 			if (this.validationError) lines.push(this.error(this.validationError));
 			lines.push("", this.dim("Enter saves · Esc cancels"));
+		} else if (item.id === "generalPurposeModel") {
+			lines.push(this.dim("Enter/Space opens the model picker"));
 		} else if (item.values) {
 			lines.push(
-				`${this.muted("options")} ${item.values.join(", ")}`,
+				...wrapTextWithAnsi(
+					`${this.muted("options")} ${item.values.map(settingValueLabel).join(", ")}`,
+					width,
+				),
 				"",
 				this.dim("Enter/Space cycles values · changes save immediately"),
 			);
@@ -269,6 +334,14 @@ export class SubagentSettingsComponent implements Component, Focusable {
 	}
 
 	private renderPreview(item: SettingDefinition, width: number): string[] {
+		if (
+			item.id === "generalPurposeModel" ||
+			item.id === "generalPurposeThinking"
+		)
+			return wrapTextWithAnsi(
+				"Only new spawns that omit agent use these defaults. Explicit spawn overrides win. Named agents and resumed conversations are unchanged. Thinking is clamped to the selected model's capabilities.",
+				width,
+			).map((line) => this.muted(line));
 		if (item.id === "restoreSubagents")
 			return wrapTextWithAnsi(
 				"On reopening this parent session, restore saved history and collection state. Previously active work becomes interrupted. Follow-ups open the child session lazily. Fresh and forked parent sessions start empty.",
@@ -400,6 +473,24 @@ export class SubagentSettingsComponent implements Component, Focusable {
 		const item = this.items[this.selected];
 		if (!item) return;
 		if (!this.isEnabled(item)) return;
+		if (item.id === "generalPurposeModel") {
+			const editor = new Input();
+			editor.focused = this._focused;
+			this.selectedModel = Math.max(
+				0,
+				item.values?.indexOf(item.currentValue) ?? 0,
+			);
+			editor.onEscape = () => this.cancelEditing();
+			editor.onSubmit = () => {
+				const model = this.filteredModels()[this.selectedModel];
+				if (model === undefined) return;
+				item.currentValue = model;
+				this.editor = undefined;
+				this.onChange({ kind: "generalPurposeModel", value: model });
+			};
+			this.editor = editor;
+			return;
+		}
 		if (item.values) {
 			const index = item.values.indexOf(item.currentValue);
 			const nextValue = item.values[(index + 1) % item.values.length];
@@ -416,6 +507,13 @@ export class SubagentSettingsComponent implements Component, Focusable {
 		editor.onEscape = () => this.cancelEditing();
 		this.validationError = "";
 		this.editor = editor;
+	}
+
+	private filteredModels(): string[] {
+		const query = this.editor?.getValue().toLowerCase() ?? "";
+		return (this.items[this.selected]?.values ?? []).filter((model) =>
+			settingValueLabel(model).toLowerCase().includes(query),
+		);
 	}
 
 	private commitNumber(item: SettingDefinition, value: string): void {
@@ -471,6 +569,7 @@ export class SubagentSettingsComponent implements Component, Focusable {
 
 function createSettingDefinitions(
 	settings: SubagentSettings,
+	models: readonly string[],
 ): SettingDefinition[] {
 	return [
 		{
@@ -548,10 +647,33 @@ function createSettingDefinitions(
 			description:
 				"Restore saved subagents when this parent session is reopened or reloaded. Requires Save sessions. Changes apply on the next session load, not to the current list.",
 		},
+		{
+			id: "generalPurposeModel",
+			section: "General-purpose",
+			label: "Model",
+			currentValue: settings.runtime.generalPurposeModel,
+			values: ["inherit", ...new Set(models)].sort((a, b) =>
+				a === "inherit" ? -1 : b === "inherit" ? 1 : a.localeCompare(b),
+			),
+			description:
+				"Inherit the parent's current model or select a model from Pi's registry. Unavailable saved models remain visible and fail explicitly when spawning.",
+		},
+		{
+			id: "generalPurposeThinking",
+			section: "General-purpose",
+			label: "Thinking",
+			currentValue: settings.runtime.generalPurposeThinking,
+			values: GENERAL_PURPOSE_THINKING_VALUES,
+			description:
+				"Pi default uses the per-model setting, then the global default, then medium. Inherit parent copies the parent's current thinking level when spawning.",
+		},
 	];
 }
 
 function settingChange(id: SettingId, value: string): SubagentSettingsChange {
+	if (id === "generalPurposeModel") return { kind: id, value };
+	if (id === "generalPurposeThinking")
+		return { kind: id, value: value as GeneralPurposeThinking };
 	if (id === "saveSessions" || id === "restoreSubagents")
 		return { kind: id, value: value === "on" };
 	if (id === "widgetPlacement")
@@ -562,7 +684,16 @@ function settingChange(id: SettingId, value: string): SubagentSettingsChange {
 	return { kind: id, value: Number(value) };
 }
 function settingListValue(item: SettingDefinition): string {
-	return item.values ? `‹ ${item.currentValue} ›` : `[ ${item.currentValue} ]`;
+	return item.values
+		? `‹ ${settingValueLabel(item.currentValue)} ›`
+		: `[ ${item.currentValue} ]`;
+}
+function settingValueLabel(value: string): string {
+	return value === "inherit"
+		? "Inherit parent"
+		: value === "default"
+			? "Pi default"
+			: value;
 }
 function positiveInt(value: string): number {
 	const parsed = Number(value);

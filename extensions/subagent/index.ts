@@ -75,6 +75,7 @@ export default function subagentExtension(
 		);
 	const settingsStore =
 		dependencies.settingsStore ?? new SubagentSettingsStore();
+	runtime.configure({ getRootThinkingLevel: () => pi.getThinkingLevel?.() });
 
 	let currentSettings: SubagentSettings = DEFAULT_SUBAGENT_SETTINGS;
 	const getCurrentSettings = () => currentSettings;
