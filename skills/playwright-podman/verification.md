@@ -13,6 +13,10 @@ Run after changing the image, CLI version, or browser configuration. These check
 
 Keep assertions in the trial output. CLI output can contain an error even when a shell pipeline succeeds; inspect results rather than treating the final command's exit status as proof.
 
+## Loopback access policy
+
+After changing the image policy, open `chrome://policy` and confirm `LoopbackNetworkAllowedForUrls` has value `["*"]` and status `OK`. From an authorized HTTPS site that loads a host-loopback development resource, verify the resource loads without permission grants or request interception. Normal CORS restrictions still apply. Recheck `chrome://sandbox` to confirm the browser sandbox remains enabled.
+
 ## Authentication and uploads
 
 Run `bun skills/playwright-podman/tool/verify-imports.ts` from the repository root. This opt-in check needs Podman and the built image. It starts a localhost fixture and a disposable browser, imports synthetic authentication, verifies an authenticated request, imports a file with spaces in its name, and uploads through the site's file chooser. It also checks private failure output and removal of temporary auth files. It cleans up its browser, server, and host fixture files.

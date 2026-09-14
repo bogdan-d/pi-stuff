@@ -4,6 +4,11 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund \
     && ./node_modules/.bin/playwright install chromium
 ENV PATH="/opt/playwright-cli/node_modules/.bin:${PATH}"
+# Disposable browser only: let every site reach host-loopback development servers.
+# Playwright's Chromium channel installs Chrome for Testing, with its own policy path.
+RUN mkdir -p /etc/opt/chrome_for_testing/policies/managed \
+    && printf '%s\n' '{"LoopbackNetworkAllowedForUrls":["*"]}' \
+       > /etc/opt/chrome_for_testing/policies/managed/loopback-network.json
 RUN mkdir -p /work/.playwright && chown -R pwuser:pwuser /work
 COPY cli.config.json /work/.playwright/cli.config.json
 USER pwuser
