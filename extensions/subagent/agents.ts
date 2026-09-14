@@ -43,11 +43,12 @@ export interface AgentDefinition {
 }
 
 export const DEFAULT_AGENT: AgentDefinition = {
-	name: "general-purpose",
-	description: "General-purpose agent used when spawn omits agent.",
+	name: "default",
+	description:
+		"Routine tasks that do not need a specialized role, and tasks with no matching specialist.",
 	source: "builtin",
 	systemPrompt:
-		"You are a general-purpose subagent. Complete the delegated task using the available tools. You do not have the parent conversation; use the supplied prompt and filesystem for context. Follow the task's scope and constraints, preserve unrelated work, and report your findings or changes and any verification performed.",
+		"Complete the delegated task using the available tools. You do not have the parent conversation; use the supplied prompt and filesystem for context. Follow the task's scope and constraints, preserve unrelated work, and report your findings or changes and any verification performed.",
 };
 
 export type AgentDefinitionSummary = Readonly<
@@ -240,7 +241,7 @@ export class AgentRegistry {
 	}
 
 	summarizeAgent(): string {
-		return Array.from(this.agents.values())
+		return listAgentDefinitions(this)
 			.map((agent) => `${agent.name} (${agent.source}) — ${agent.description}`)
 			.join("\n");
 	}
@@ -260,7 +261,12 @@ export function serializeAgentDefinition(config: AgentDefinition) {
 }
 
 export function listAgentDefinitions(registry: AgentRegistry) {
-	return Array.from(registry.agents.values()).map(serializeAgentDefinition);
+	return [
+		DEFAULT_AGENT,
+		...Array.from(registry.agents.values()).filter(
+			(agent) => agent.name !== DEFAULT_AGENT.name,
+		),
+	].map(serializeAgentDefinition);
 }
 
 function nearestProjectAgentsDir(cwd: string): string | undefined {

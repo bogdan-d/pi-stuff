@@ -90,11 +90,7 @@ export function applySubagentSettingsChange(
 	}
 }
 
-type SettingSection =
-	| "Interface"
-	| "Notifications"
-	| "Runtime"
-	| "General-purpose";
+type SettingSection = "Interface" | "Notifications" | "Runtime" | "Default";
 type SettingId = SubagentSettingsChange["kind"];
 
 interface SettingDefinition {
@@ -649,7 +645,7 @@ function createSettingDefinitions(
 		},
 		{
 			id: "generalPurposeModel",
-			section: "General-purpose",
+			section: "Default",
 			label: "Model",
 			currentValue: settings.runtime.generalPurposeModel,
 			values: ["inherit", ...new Set(models)].sort((a, b) =>
@@ -660,7 +656,7 @@ function createSettingDefinitions(
 		},
 		{
 			id: "generalPurposeThinking",
-			section: "General-purpose",
+			section: "Default",
 			label: "Thinking",
 			currentValue: settings.runtime.generalPurposeThinking,
 			values: GENERAL_PURPOSE_THINKING_VALUES,

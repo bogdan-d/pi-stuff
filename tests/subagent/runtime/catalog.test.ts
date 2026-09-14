@@ -1017,7 +1017,7 @@ test("spawn validation is ordered, isolated, and does not allocate or consume ca
 	]);
 	expect(batch.starts[1]).toMatchObject({
 		error:
-			"Unknown agent: missing. Available agents: bad-definition, worker. Omit agent to use the built-in general-purpose agent.",
+			"Unknown agent: missing. Available agents: default, worker, bad-definition.",
 	});
 	expect(batch.starts[2]).toMatchObject({
 		error: expect.stringContaining("Invalid model"),

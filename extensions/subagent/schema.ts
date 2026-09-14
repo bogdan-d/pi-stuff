@@ -28,15 +28,24 @@ export const SpawnTaskSchema = Type.Object(
 	{
 		agent: Type.Optional(
 			Type.String({
-				description:
-					"Name from agents(); omit for the built-in general-purpose agent",
+				description: "Name from agents(); omission selects default",
 			}),
 		),
 		prompt: Type.String(),
 		label: Type.String({ description: "3-5 words describing what, not how." }),
 		skills: Type.Optional(Type.Array(Type.String())),
-		model: Type.Optional(Type.String()),
-		thinking: Type.Optional(StringEnum(MODEL_THINKING_LEVELS)),
+		model: Type.Optional(
+			Type.String({
+				description:
+					"Override only at the user's request; otherwise keep the role's tuned model",
+			}),
+		),
+		thinking: Type.Optional(
+			StringEnum(MODEL_THINKING_LEVELS, {
+				description:
+					"Use the role's tuned thinking level unless the task demands an adjustment",
+			}),
+		),
 		cwd: Type.Optional(Type.String()),
 	},
 	{ additionalProperties: false },

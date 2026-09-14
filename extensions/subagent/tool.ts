@@ -1117,6 +1117,7 @@ export function defineSubagentTool(deps: SubagentToolDeps) {
 		label: "Subagent",
 		description: [
 			"Delegate work asynchronously through persistent, context-isolated subagents. Subagents share the working filesystem.",
+			"Before your first spawn, call agents() and select the role whose description best matches the task. Role definitions carry user-tuned model and thinking settings.",
 			"Actions:",
 			"  agents(): List available agent definitions.",
 			"  list(statuses?, collected?): List child subagents with descendant summaries, optionally filtered by the model's collection receipt.",

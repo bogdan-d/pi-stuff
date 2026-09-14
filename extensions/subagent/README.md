@@ -35,7 +35,9 @@ Inspect the repository and return concise, evidence-backed findings.
 | `tools` | no | Comma-separated allowlist; include `subagent` for recursive delegation. |
 | `skills` | no | Comma-separated default skills. A spawn value replaces this list. |
 
-The body becomes the child system prompt. Every spawn requires `agent`, `prompt`, and a nonblank `label`. Duplicate labels are allowed; `subagentId` remains the unique handle. Entries may override model, thinking, working directory, and skills.
+The body becomes the child system prompt. Before the first spawn, the caller lists agent definitions and selects the best matching role. Keep the role's user-tuned model unless the user requests an override. Use its thinking level by default, but adjust it when the task demands it. The built-in `default` subagent is listed first for routine tasks that do not need a specialist and tasks with no matching role. Select it with `agent: "default"` or omit `agent`. The name `default` is reserved for the built-in agent. Its model and thinking settings live under **Default** in the settings UI. The stored keys remain `generalPurposeModel` and `generalPurposeThinking` so existing tuning is preserved.
+
+Every spawn requires `prompt` and a nonblank `label`. Duplicate labels are allowed; `subagentId` remains the unique handle. Entries may override working directory and skills.
 
 ## Tool actions
 

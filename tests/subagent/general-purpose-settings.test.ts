@@ -41,7 +41,7 @@ test("general-purpose settings preserve defaults and validate stored choices", (
 	});
 });
 
-test("loaded defaults apply only to unnamed spawns, overrides win, and resumes retain configuration", async () => {
+test("loaded defaults apply to default spawns, overrides win, and resumes retain configuration", async () => {
 	const registry = new AgentRegistry();
 	registry.agents.set("specialist", {
 		...DEFAULT_AGENT,
@@ -97,6 +97,12 @@ test("loaded defaults apply only to unnamed spawns, overrides win, and resumes r
 			thinking: "off",
 		},
 		{ kind: "spawn", agent: "specialist", prompt: "Named", label: "Named" },
+		{
+			kind: "spawn",
+			agent: "default",
+			prompt: "Explicit default",
+			label: "Explicit default",
+		},
 	]);
 	await batch.completion;
 	expect(
@@ -105,6 +111,7 @@ test("loaded defaults apply only to unnamed spawns, overrides win, and resumes r
 		{ model: "test/configured", thinking: "high" },
 		{ model: "test/override", thinking: "off" },
 		{ model: "test/named", thinking: "low" },
+		{ model: "test/configured", thinking: "high" },
 	]);
 	const first = batch.starts[0];
 	if (!first?.ok) throw new Error("Spawn failed");

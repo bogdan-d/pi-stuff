@@ -7,6 +7,7 @@ import type {
 import {
 	AgentRegistry,
 	DEFAULT_AGENT,
+	listAgentDefinitions,
 	resolveRequestedConfig,
 } from "./agents.js";
 import type { ConversationCheckpoint } from "./checkpoint.js";
@@ -313,7 +314,7 @@ export class SubagentRuntime {
 		for (const task of tasks) {
 			if (task.kind !== "spawn") continue;
 			const definition =
-				task.agent === undefined
+				task.agent === undefined || task.agent === DEFAULT_AGENT.name
 					? DEFAULT_AGENT
 					: this.registry.agents.get(task.agent);
 			if (!definition) continue;
@@ -443,10 +444,10 @@ export class SubagentRuntime {
 		initiatedBy: GenerationInitiator,
 	): Reservation {
 		let definition =
-			task.agent === undefined
+			task.agent === undefined || task.agent === DEFAULT_AGENT.name
 				? DEFAULT_AGENT
 				: this.registry.agents.get(task.agent);
-		if (task.agent === undefined) {
+		if (task.agent === undefined || task.agent === DEFAULT_AGENT.name) {
 			const thinking =
 				this.generalPurposeThinking === "inherit"
 					? caller
@@ -466,7 +467,11 @@ export class SubagentRuntime {
 		}
 		if (!definition)
 			return {
-				error: `Unknown agent: ${task.agent}. Available agents: ${[...this.registry.agents.keys()].sort().join(", ") || "none"}. Omit agent to use the built-in general-purpose agent.`,
+				error: `Unknown agent: ${task.agent}. Available agents: ${listAgentDefinitions(
+					this.registry,
+				)
+					.map((agent) => agent.name)
+					.join(", ")}.`,
 			};
 		const requested = resolveRequestedConfig(definition, task);
 		const model = resolveModel(requested.model, ctx.model, ctx.modelRegistry);
