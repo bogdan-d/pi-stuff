@@ -101,7 +101,12 @@ test("SDK startup recovers accounts-only auth and child preflight uses the selec
 			await registry.getApiKeyForProvider("zai"),
 			"synthetic-second",
 		);
-		assert.deepEqual(ui.notifications, []);
+		assert.deepEqual(ui.notifications, [
+			{
+				message: `Restored ${model.provider}/${model.id} with medium reasoning.`,
+				level: "info",
+			},
+		]);
 		await initial.session.extensionRunner.emit({
 			type: "session_shutdown",
 			reason: "quit",

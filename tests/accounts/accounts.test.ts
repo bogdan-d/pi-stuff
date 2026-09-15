@@ -253,6 +253,7 @@ test("accounts registers only the interactive /accounts command and lifecycle ho
 	assert.deepEqual([...mock.commands.keys()].sort(), ["accounts"]);
 	assert.deepEqual([...mock.events.keys()].sort(), [
 		"before_agent_start",
+		"before_provider_request",
 		"model_select",
 		"session_shutdown",
 		"session_start",

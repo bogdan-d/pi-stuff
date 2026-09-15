@@ -13,6 +13,7 @@ import {
 	parseAccountName,
 	type StoredCredential,
 } from "./account-store.js";
+import { registerAccountDebug } from "./debug.js";
 import {
 	type AccountProviderAdapter,
 	type AccountProviderId,
@@ -201,7 +202,25 @@ export default function accountsExtension(
 			};
 		},
 	);
-	pi.registerCommand("accounts", accountCommand);
+	pi.registerCommand("accounts", {
+		...accountCommand,
+		description:
+			"Manage accounts, or use /accounts debug to inspect the latest request",
+		getArgumentCompletions: (prefix) =>
+			"debug".startsWith(prefix.trim().toLowerCase())
+				? [
+						{
+							value: "debug",
+							label: "debug",
+							description: "Show trimmed latest request",
+						},
+					]
+				: null,
+		handler: async (args, ctx) => {
+			if (args.trim().toLowerCase() === "debug") return showDebug(ctx);
+			await accountCommand.handler(args, ctx);
+		},
+	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		sessionGeneration += 1;
@@ -271,6 +290,7 @@ export default function accountsExtension(
 		);
 		setStatus(ctx, undefined);
 	});
+	const showDebug = registerAccountDebug(pi);
 	registerSelectionMemory(
 		pi,
 		dependencies.selection ??

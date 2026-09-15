@@ -169,12 +169,24 @@ export function registerSelectionMemory(
 				if (!model || !(await pi.setModel(model)))
 					throw new Error("Saved model unavailable.");
 				pi.setThinkingLevel(args.thinking ?? target.thinking);
+				if (
+					ctx.model?.provider !== target.provider ||
+					ctx.model?.id !== target.model
+				)
+					throw new Error("Restored model does not match the active model.");
+				ctx.ui.notify(
+					`Restored ${ctx.model.provider}/${ctx.model.id} with ${pi.getThinkingLevel()} reasoning.`,
+					"info",
+				);
 			}
 			ready = true;
 		} catch {
+			const active = ctx.model;
 			ctx.ui.notify(
-				"Accounts could not restore the model selection. Choose an account with /accounts and a model with /model. No alternate account was selected.",
-				"error",
+				active && active.provider !== "unknown"
+					? `Could not restore the saved model. Using ${active.provider}/${active.id} with ${pi.getThinkingLevel()} reasoning instead. Change it with /model.`
+					: "Could not restore the saved model. No active model is available. Choose an account with /accounts and a model with /model.",
+				active && active.provider !== "unknown" ? "warning" : "error",
 			);
 		} finally {
 			restoring = false;

@@ -131,3 +131,23 @@ test("headless children neither restore nor overwrite interactive selection", as
 		saved,
 	);
 });
+
+test("failed or ineffective restoration announces the actual fallback without overwriting memory", async () => {
+	for (const result of [false, true]) {
+		const h = harness();
+		h.pi.setModel = async () => result;
+		await h.emit("session_start", { reason: "startup" });
+		assert.equal(h.ctx.model, codex);
+		assert.deepEqual(h.notifications, [
+			{
+				message: `Could not restore the saved model. Using openai-codex/codex with ${h.pi.getThinkingLevel()} reasoning instead. Change it with /model.`,
+				level: "warning",
+			},
+		]);
+		await h.emit("before_agent_start");
+		assert.deepEqual(
+			h.storage.read((raw) => JSON.parse(raw!)),
+			saved,
+		);
+	}
+});
