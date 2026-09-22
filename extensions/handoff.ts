@@ -12,12 +12,8 @@
  * The generated prompt appears as a draft in the editor for review/editing.
  */
 
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Message, TextContent } from "@earendil-works/pi-ai";
-import type {
-	ExtensionAPI,
-	SessionEntry,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	BorderedLoader,
 	convertToLlm,
@@ -46,55 +42,6 @@ Files involved:
 ## Task
 [Clear description of what to do next based on user's goal]`;
 
-function entryToMessage(entry: SessionEntry): AgentMessage | undefined {
-	if (entry.type === "message") {
-		return entry.message;
-	}
-	if (entry.type === "compaction") {
-		return {
-			role: "compactionSummary",
-			summary: entry.summary,
-			tokensBefore: entry.tokensBefore,
-			timestamp: new Date(entry.timestamp).getTime(),
-		};
-	}
-	return undefined;
-}
-
-function getHandoffMessages(branch: SessionEntry[]): AgentMessage[] {
-	let compactionIndex = -1;
-	for (let i = branch.length - 1; i >= 0; i--) {
-		if (branch[i]?.type === "compaction") {
-			compactionIndex = i;
-			break;
-		}
-	}
-	if (compactionIndex < 0) {
-		return branch
-			.map(entryToMessage)
-			.filter((message): message is AgentMessage => message !== undefined);
-	}
-
-	const compaction = branch[compactionIndex];
-	if (!compaction || compaction.type !== "compaction") {
-		return [];
-	}
-
-	const firstKeptIndex = branch.findIndex(
-		(entry) => entry.id === compaction.firstKeptEntryId,
-	);
-	const compactedBranch = [
-		compaction,
-		...(firstKeptIndex >= 0
-			? branch.slice(firstKeptIndex, compactionIndex)
-			: []),
-		...branch.slice(compactionIndex + 1),
-	];
-	return compactedBranch
-		.map(entryToMessage)
-		.filter((message): message is AgentMessage => message !== undefined);
-}
-
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("handoff", {
 		description: "Transfer context to a new focused session",
@@ -115,18 +62,14 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// Gather conversation context from current branch. If the branch was compacted,
-			// include the compaction summary plus entries from firstKeptEntryId onward.
-			const messages = getHandoffMessages(ctx.sessionManager.getBranch());
+			// Honor compaction and context edits without reviving raw history.
+			const { messages } = ctx.sessionManager.buildSessionProjection();
 
-			if (messages.length === 0) {
+			const conversationText = serializeConversation(convertToLlm(messages));
+			if (!conversationText.trim()) {
 				ctx.ui.notify("No conversation to hand off", "error");
 				return;
 			}
-
-			// Convert to LLM format and serialize
-			const llmMessages = convertToLlm(messages);
-			const conversationText = serializeConversation(llmMessages);
 			const currentSessionFile = ctx.sessionManager.getSessionFile();
 
 			// Generate the handoff prompt with loader UI

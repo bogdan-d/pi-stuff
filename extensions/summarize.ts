@@ -4,9 +4,9 @@ import { uuidv7 } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
-	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import {
+	convertToLlm,
 	DynamicBorder,
 	getMarkdownTheme,
 } from "@earendil-works/pi-coding-agent";
@@ -70,15 +70,10 @@ const extractToolCallLines = (content: unknown): string[] => {
 	return toolCalls;
 };
 
-const buildConversationText = (entries: SessionEntry[]): string => {
+const buildConversationText = (messages: AgentMessage[]): string => {
 	const sections: string[] = [];
 
-	for (const entry of entries) {
-		if (entry.type !== "message") {
-			continue;
-		}
-
-		const message = entry.message;
+	for (const message of messages) {
 		if (!isConversationMessage(message)) {
 			continue;
 		}
@@ -165,8 +160,8 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("summarize", {
 		description: "Summarize the current conversation in a custom UI",
 		handler: async (_args, ctx) => {
-			const branch = ctx.sessionManager.getBranch();
-			const conversationText = buildConversationText(branch);
+			const { messages } = ctx.sessionManager.buildSessionProjection();
+			const conversationText = buildConversationText(convertToLlm(messages));
 
 			if (!conversationText.trim()) {
 				if (ctx.hasUI) {
