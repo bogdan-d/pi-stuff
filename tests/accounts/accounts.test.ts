@@ -189,6 +189,9 @@ test("built-in provider adapters preserve each provider's complete OAuth auth sh
 		typeof byId.get("openai-codex")?.invalidateConnections,
 		"function",
 	);
+	assert.deepEqual(await byId.get("openai")?.oauth?.toAuth(base), {
+		apiKey: "access-contract",
+	});
 	assert.deepEqual(await byId.get("openai-codex")?.oauth.toAuth(base), {
 		apiKey: "access-contract",
 	});

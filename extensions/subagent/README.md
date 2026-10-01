@@ -61,6 +61,10 @@ A caller can inspect any subagent in its descendant tree, but can mutate only it
 
 Subagents are context-isolated Pi conversations created from reusable agent definitions. They share the working filesystem with the main session, but keep their own prompts, tools, and conversation history.
 
+Children load Pi's built-in MCP, codemode, and tool-search extensions, respecting global and trusted project exclusions such as `-builtin:mcp`. Pi's `defaultTools` and MCP auto-activation control which tools are enabled. An explicit agent `tools` allowlist still limits access; include `codemode` or `tool_search` when that agent needs them.
+
+Children in the parent's working directory inherit its project trust decision, including session-only trust. A different working directory uses Pi's saved trust decision or global default policy; an unresolved `ask` stays untrusted. Project `.pi/mcp.json` is loaded only for trusted directories. Each child owns its MCP connections and closes them when its session shuts down.
+
 ### Parallel delegation
 
 Delegated work starts asynchronously, allowing Pi to launch several focused tasks and continue working while they run. Each task streams its own progress and recent activity. When a model result is needed, Pi uses `join` to wait for that specific subagent and collect its current result.

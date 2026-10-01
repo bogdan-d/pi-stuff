@@ -690,6 +690,8 @@ function providerDisplayName(providerId: AccountProviderId): string {
 			return "Anthropic";
 		case "github-copilot":
 			return "GitHub Copilot";
+		case "openai":
+			return "OpenAI";
 		case "openai-codex":
 			return "OpenAI Codex";
 		default:

@@ -2,13 +2,14 @@
 
 [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](../../LICENSE)
 
-The accounts extension is a native [Pi coding agent](https://pi.dev) extension for keeping and switching named subscription OAuth accounts independently across supported providers.
+The accounts extension is a native [Pi coding agent](https://pi.dev) extension for keeping and switching named OAuth and API-key accounts independently across supported providers.
 
 It uses Pi's built-in providers and provider-owned OAuth implementations. A named account temporarily overrides only that provider's runtime auth; selecting `default` restores Pi's normal `/login`, `auth.json`, or environment-based resolution without deleting the named account.
 
 ## ✨ Features
 
-- Manages OpenAI Codex, Anthropic Claude Pro/Max, and GitHub Copilot OAuth accounts through one interactive `/accounts` command.
+- Manages OpenAI ChatGPT, OpenAI Codex, Anthropic Claude Pro/Max, and GitHub Copilot OAuth accounts through one interactive `/accounts` command.
+- Offers API-key login for providers that expose it, including OpenAI, and keeps those accounts separate from subscription accounts.
 - Keeps an independent active named account—or Pi's built-in login—for every provider.
 - Stores complete provider-owned OAuth credentials, including GitHub Enterprise and available-model metadata.
 - Refreshes rotating OAuth credentials under a cross-process file lock.
@@ -24,6 +25,7 @@ It uses Pi's built-in providers and provider-owned OAuth implementations. A name
 
 | Provider | Provider ID | Account-specific behavior |
 | --- | --- | --- |
+| OpenAI | `openai` | ChatGPT subscription OAuth or API-key accounts; reuses Pi's stable installation ID and preserves the issued OAuth client ID for refresh |
 | OpenAI Codex | `openai-codex` | ChatGPT Plus/Pro OAuth, OAuth-only native-provider bridge, and Codex WebSocket invalidation |
 | Anthropic | `anthropic` | Claude Pro/Max OAuth without interfering with Anthropic API-key auth after returning to `default` |
 | GitHub Copilot | `github-copilot` | Individual or Enterprise login, credential-derived API endpoint, and account-specific available models |
@@ -88,7 +90,7 @@ What do you want to do?
   Switch another provider’s account
 ```
 
-Login follows Pi's built-in `/login` style: choose a provider, enter a named account, then complete that provider's OAuth flow. `default` is reserved for Pi's built-in login. Reusing an existing provider/account name asks before replacing the stored credential.
+Login follows Pi's built-in `/login` style: choose a provider, enter a named account, choose OAuth or API key when both are available, then complete that provider's login flow. For ChatGPT subscription login, choose **OpenAI**, then **OAuth**. Existing `openai-codex` accounts remain under **OpenAI Codex**; they are not converted to `openai` accounts. `default` is reserved for Pi's built-in login. Reusing an existing provider/account name asks before replacing the stored credential.
 
 Switching the current model provider is the primary flow. Switching a different provider is explicit: choose **Switch another provider’s account**, choose the provider, then choose the account. Choosing `default` restores Pi's built-in login for that provider. `/accounts` manages account identity only; it does not switch models except when login succeeds while the current model is still `unknown`, where it selects that provider's default model as onboarding help.
 
@@ -137,10 +139,8 @@ If both files exist, `pi-accounts.json` is canonical and the legacy file is not 
 
 ## 🚧 Limitations and non-goals
 
-- This package manages only subscription OAuth accounts. It does not store or switch API-key profiles.
-- Continue using Pi's `auth.json`, environment variables, or `!command` secret-manager resolution for API keys.
+- API-key account login requires a provider-owned API-key login method. Pi's `auth.json`, environment variables, or `!command` secret-manager resolution remain available when selecting `default`.
 - It does not rotate accounts automatically, evade quotas, or report usage.
-- It does not support arbitrary custom providers in the first release.
 - Live OAuth login and model requests depend on provider service availability and account entitlement.
 
 ## 🗂️ Package layout

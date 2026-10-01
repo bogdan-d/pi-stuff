@@ -4,15 +4,23 @@ import {
 	type AuthInteraction,
 	type AuthPrompt,
 	cleanupSessionResources,
+	type LoginOptions,
 	type ModelAuth,
 	type OAuthCredential,
 } from "@earendil-works/pi-ai";
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+	type ExtensionCommandContext,
+	getAgentDir,
+	SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 
 export type AccountProviderId = string;
 
 export interface ProviderOwnedOAuth {
-	login(interaction: AuthInteraction): Promise<OAuthCredential>;
+	login(
+		interaction: AuthInteraction,
+		options?: LoginOptions,
+	): Promise<OAuthCredential>;
 	refresh(
 		credential: OAuthCredential,
 		signal: AbortSignal,
@@ -40,16 +48,31 @@ type BuiltinProviderModule = {
 type ProviderModuleLoader = () => Promise<BuiltinProviderModule>;
 
 const PROVIDERS_MODULE_ID = "@earendil-works/pi-ai/providers/all";
-const oauthPromises = new Map<string, Promise<ProviderOwnedOAuth>>();
 
 export function createBuiltinProviderAdapters(
 	options: {
 		closeCodexWebSockets?: (sessionId?: string) => unknown | Promise<unknown>;
 		loader?: ProviderModuleLoader;
+		getDeviceId?: () => string;
 	} = {},
 ): AccountProviderAdapter[] {
 	const loader = options.loader ?? defaultProviderModuleLoader;
+	let settings: SettingsManager | undefined;
 	return [
+		{
+			id: "openai",
+			displayName: "OpenAI",
+			requiresApiKeyBridge: false,
+			oauth: createLazyProviderOwnedOAuth("openai", loader, {
+				getDeviceId:
+					options.getDeviceId ??
+					(() =>
+						(settings ??= SettingsManager.create(
+							process.cwd(),
+							getAgentDir(),
+						)).getOrCreateDeviceId()),
+			}),
+		},
 		{
 			id: "openai-codex",
 			displayName: "OpenAI Codex",
@@ -89,10 +112,13 @@ export function createOAuthInteraction(
 function createLazyProviderOwnedOAuth(
 	providerId: AccountProviderId,
 	loader: ProviderModuleLoader,
+	loginOptions?: LoginOptions,
 ): ProviderOwnedOAuth {
-	const load = () => loadProviderOwnedOAuth(providerId, loader);
+	let promise: Promise<ProviderOwnedOAuth> | undefined;
+	const load = () => (promise ??= loadProviderOwnedOAuth(providerId, loader));
 	return {
-		login: async (interaction) => (await load()).login(interaction),
+		login: async (interaction) =>
+			(await load()).login(interaction, loginOptions),
 		refresh: async (credential, signal) =>
 			(await load()).refresh(credential, signal),
 		toAuth: async (credential) => (await load()).toAuth(credential),
@@ -111,21 +137,14 @@ async function loadProviderOwnedOAuth(
 	providerId: AccountProviderId,
 	loader: ProviderModuleLoader,
 ): Promise<ProviderOwnedOAuth> {
-	let promise = oauthPromises.get(providerId);
-	if (!promise) {
-		promise = loader().then((module) => {
-			const oauth = module
-				.builtinProviders()
-				.find((provider) => provider.id === providerId)?.auth.oauth;
-			if (!oauth)
-				throw new Error(
-					`Pi's built-in ${providerId} OAuth provider is unavailable.`,
-				);
-			return oauth;
-		});
-		oauthPromises.set(providerId, promise);
-	}
-	return promise;
+	const oauth = (await loader())
+		.builtinProviders()
+		.find((provider) => provider.id === providerId)?.auth.oauth;
+	if (!oauth)
+		throw new Error(
+			`Pi's built-in ${providerId} OAuth provider is unavailable.`,
+		);
+	return oauth;
 }
 
 async function defaultProviderModuleLoader(): Promise<BuiltinProviderModule> {

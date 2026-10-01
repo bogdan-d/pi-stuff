@@ -8,6 +8,7 @@ import accountsExtension, {
 	InMemoryAccountStorageBackend,
 	parseAccountsData,
 } from "../../extensions/accounts/accounts.js";
+import { createBuiltinProviderAdapters } from "../../extensions/accounts/oauth.js";
 import { createMockContext, createMockPi } from "../support.js";
 
 for (const native of [false, true]) {
@@ -179,7 +180,7 @@ for (const native of [false, true]) {
 	});
 }
 
-test("a provider with both login methods keeps OAuth and API-key accounts independently", async () => {
+test("OpenAI named ChatGPT and API-key accounts use separate credentials and pass Pi's device ID", async () => {
 	const runtime = await ModelRuntime.create({
 		modelsPath: null,
 		refreshOnCreate: false,
@@ -201,45 +202,57 @@ test("a provider with both login methods keeps OAuth and API-key accounts indepe
 	const store = new AccountStore(new InMemoryAccountStorageBackend());
 	accountsExtension(mock.pi, {
 		store,
-		providers: [
-			{
-				id: "anthropic",
-				displayName: "Anthropic",
-				requiresApiKeyBridge: false,
-				oauth: {
-					login: async () => ({
-						type: "oauth",
-						access: "synthetic-oauth",
-						refresh: "synthetic-refresh",
-						expires: Date.now() + 3600000,
-					}),
-					refresh: async () => {
-						throw new Error(
-							"Must not refresh API keys or fresh OAuth credentials",
-						);
+		providers: createBuiltinProviderAdapters({
+			getDeviceId: () => "0199a179-0000-7000-8000-000000000001",
+			loader: async () => ({
+				builtinProviders: () => [
+					{
+						id: "openai",
+						auth: {
+							oauth: {
+								login: async (_interaction, options) => {
+									assert.equal(
+										options?.getDeviceId?.(),
+										"0199a179-0000-7000-8000-000000000001",
+									);
+									return {
+										type: "oauth",
+										access: "synthetic-oauth",
+										refresh: "synthetic-refresh",
+										expires: Date.now() + 3600000,
+										clientId: "synthetic-issued-client",
+									};
+								},
+								refresh: async (credential) => {
+									assert.equal(credential.clientId, "synthetic-issued-client");
+									return {
+										...credential,
+										access: "synthetic-refreshed",
+										expires: Date.now() + 3600000,
+									};
+								},
+								toAuth: async (credential) => ({ apiKey: credential.access }),
+							},
+						},
 					},
-					toAuth: async (credential) => {
-						assert.equal(credential.type, "oauth");
-						return { apiKey: credential.access };
-					},
-				},
-			},
-		],
+				],
+			}),
+		}),
 	});
 	const choices = [
 		"Login new account",
-		"Anthropic",
+		"OpenAI",
 		"OAuth",
 		"Login new account",
-		"Anthropic",
+		"OpenAI",
 		"API key",
-		"Switch Anthropic account",
+		"Switch OpenAI account",
 		"subscription",
 	];
 	const inputs = ["subscription", "paid", "synthetic-paid"];
 	const { ctx } = createMockContext({
 		hasUI: true,
-		model: registry.getAll().find((model) => model.provider === "anthropic"),
+		model: registry.getAll().find((model) => model.provider === "openai"),
 		modelRegistry: registry,
 		select: async (_title: string, options: string[]) => {
 			const choice = choices.shift();
@@ -252,23 +265,35 @@ test("a provider with both login methods keeps OAuth and API-key accounts indepe
 	assert.ok(command);
 	await command.handler("", ctx);
 	assert.equal(
-		await registry.getApiKeyForProvider("anthropic"),
+		await registry.getApiKeyForProvider("openai"),
 		"synthetic-oauth",
 	);
 	await command.handler("", ctx);
-	assert.equal(
-		await registry.getApiKeyForProvider("anthropic"),
-		"synthetic-paid",
-	);
+	assert.equal(await registry.getApiKeyForProvider("openai"), "synthetic-paid");
 	await command.handler("", ctx);
 	assert.equal(
-		await registry.getApiKeyForProvider("anthropic"),
+		await registry.getApiKeyForProvider("openai"),
 		"synthetic-oauth",
 	);
 	assert.deepEqual(
-		Object.keys((await store.readProviderAsync("anthropic")).accounts),
+		Object.keys((await store.readProviderAsync("openai")).accounts),
 		["subscription", "paid"],
 	);
+	await store.updateProvider("openai", (state) => ({
+		...state,
+		accounts: {
+			...state.accounts,
+			subscription: { ...state.accounts.subscription!, expires: 0 },
+		},
+	}));
+	await mock.events.get("before_agent_start")?.[0]?.({}, ctx);
+	assert.equal(
+		await registry.getApiKeyForProvider("openai"),
+		"synthetic-refreshed",
+	);
+	choices.push("Switch OpenAI account", "default");
+	await command.handler("", ctx);
+	assert.equal(await registry.getApiKeyForProvider("openai"), undefined);
 });
 
 test("API-key storage preserves OAuth accounts and rejects invalid keys without exposing them", async () => {

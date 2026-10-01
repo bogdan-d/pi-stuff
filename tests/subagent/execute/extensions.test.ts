@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 
 import {
 	discoverInheritedExtensionPaths,
@@ -38,7 +39,14 @@ test("discovers enabled inherited extension paths in stable deduplicated order",
 
 	const paths = await discoverInheritedExtensionPaths(cwd, agentDir);
 
-	assert.deepEqual(paths, [projectOne, projectTwo, global]);
+	assert.deepEqual(paths, [
+		projectOne,
+		projectTwo,
+		global,
+		"builtin:codemode",
+		"builtin:tool-search",
+		"builtin:mcp",
+	]);
 });
 
 test("excludes this package's extension entry through a symlink without excluding other extensions", async () => {
@@ -53,7 +61,37 @@ test("excludes this package's extension entry through a symlink without excludin
 
 	const paths = await discoverInheritedExtensionPaths(cwd, agentDir);
 
-	assert.deepEqual(paths, [other]);
+	assert.deepEqual(paths, [
+		other,
+		"builtin:codemode",
+		"builtin:tool-search",
+		"builtin:mcp",
+	]);
+});
+
+test("inherited builtins honor global exclusions and trusted project overrides", async () => {
+	const { agentDir, cwd } = await makeWorkspace();
+	await writeFile(
+		join(agentDir, "settings.json"),
+		JSON.stringify({ extensions: ["-builtin:mcp"] }),
+	);
+	await writeFile(
+		join(cwd, ".pi", "settings.json"),
+		JSON.stringify({ extensions: ["+builtin:mcp", "-builtin:codemode"] }),
+	);
+	for (const projectTrusted of [false, true]) {
+		const paths = await discoverInheritedExtensionPaths(
+			cwd,
+			agentDir,
+			SettingsManager.create(cwd, agentDir, { projectTrusted }),
+		);
+		assert.deepEqual(
+			paths,
+			projectTrusted
+				? ["builtin:tool-search", "builtin:mcp"]
+				: ["builtin:codemode", "builtin:tool-search"],
+		);
+	}
 });
 
 test("discovers skills provided by configured packages", async () => {

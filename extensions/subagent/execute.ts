@@ -7,12 +7,18 @@ import {
 	type AgentSession,
 	type AgentSessionEvent,
 	createAgentSession,
+	createCodemodeExtension,
+	createMcpExtension,
+	createToolSearchExtension,
 	DefaultPackageManager,
 	DefaultResourceLoader,
 	type ExtensionContext,
 	getAgentDir,
+	hasTrustRequiringProjectResources,
+	type InlineExtension,
 	loadSkills,
 	type ModelRegistry,
+	ProjectTrustStore,
 	SessionManager,
 	SettingsManager,
 	type Skill,
@@ -32,12 +38,37 @@ import {
 import { timingAsync } from "./timing.js";
 
 const ownExtensionPath = fileURLToPath(new URL("./index.ts", import.meta.url));
+const inheritedBuiltinExtensions = [
+	{
+		name: "codemode",
+		factory: createCodemodeExtension(),
+		replaceable: true,
+		builtin: true,
+	},
+	{
+		name: "tool-search",
+		factory: createToolSearchExtension(),
+		replaceable: true,
+		builtin: true,
+	},
+	{
+		name: "mcp",
+		factory: createMcpExtension(),
+		replaceable: true,
+		builtin: true,
+	},
+] satisfies InlineExtension[];
 
 export async function discoverInheritedExtensionPaths(
 	cwd: string,
 	agentDir: string,
+	settingsManager?: SettingsManager,
 ): Promise<string[]> {
-	const resolved = await discoverInheritedResourcePaths(cwd, agentDir);
+	const resolved = await discoverInheritedResourcePaths(
+		cwd,
+		agentDir,
+		settingsManager,
+	);
 	const ownCanonicalPath = await canonicalPath(ownExtensionPath);
 	const seen = new Set<string>();
 	const inherited: string[] = [];
@@ -63,14 +94,18 @@ export async function discoverInheritedSkillPaths(
 		.map((entry) => entry.path);
 }
 
-async function discoverInheritedResourcePaths(cwd: string, agentDir: string) {
-	const settingsManager = SettingsManager.create(cwd, agentDir);
+async function discoverInheritedResourcePaths(
+	cwd: string,
+	agentDir: string,
+	settingsManager = SettingsManager.create(cwd, agentDir),
+) {
 	await settingsManager.reload();
 
 	const packageManager = new DefaultPackageManager({
 		cwd,
 		agentDir,
 		settingsManager,
+		builtinExtensions: inheritedBuiltinExtensions.map(({ name }) => name),
 	});
 	return packageManager.resolve();
 }
@@ -91,7 +126,7 @@ export interface ExecuteGenerationDependencies {
 	settingsManager: typeof SettingsManager.create;
 	loadSkills: typeof loadSkills;
 	readSkillFile: typeof readFileSync;
-	loadExtensionPaths: (cwd: string, agentDir: string) => Promise<string[]>;
+	loadExtensionPaths: typeof discoverInheritedExtensionPaths;
 	childToolsFor?: (agent: Conversation) => readonly ToolDefinition[];
 	childSessionEvent?: (
 		agent: Conversation,
@@ -162,6 +197,16 @@ export async function executeGeneration(
 	const cwd = cwdResolution.value;
 	const selectedModel = modelResolution.value;
 	const agentDir = dependencies.getAgentDir();
+	const settingsManager = dependencies.settingsManager(cwd, agentDir, {
+		projectTrusted: false,
+	});
+	const projectTrusted =
+		cwd === path.resolve(ctx.cwd)
+			? (ctx.isProjectTrusted?.() ?? false)
+			: (new ProjectTrustStore(agentDir).get(cwd) ??
+				(!hasTrustRequiringProjectResources(cwd) ||
+					settingsManager.getDefaultProjectTrust() === "always"));
+	settingsManager.setProjectTrusted(projectTrusted);
 
 	const requestedSkills = requestedConfig.skills ?? [];
 	let skillBlocks = agent.resolvedSkillBlocks;
@@ -183,14 +228,17 @@ export async function executeGeneration(
 	const inheritedExtensionPaths = await dependencies.loadExtensionPaths(
 		cwd,
 		agentDir,
+		settingsManager,
 	);
 	const childTools = dependencies.childToolsFor?.(agent) ?? [];
 
 	const resourceLoader = new dependencies.ResourceLoader({
 		cwd,
 		agentDir,
+		settingsManager,
 		noExtensions: true,
 		additionalExtensionPaths: inheritedExtensionPaths,
+		extensionFactories: inheritedBuiltinExtensions,
 		noSkills: true,
 		noPromptTemplates: true,
 		noThemes: true,
@@ -227,7 +275,6 @@ export async function executeGeneration(
 					),
 				)
 			: dependencies.sessionManager(cwd);
-	const settingsManager = dependencies.settingsManager(cwd, agentDir);
 	const sessionOptions = {
 		cwd,
 		agentDir,
