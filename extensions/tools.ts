@@ -61,12 +61,13 @@ export default function toolsExtension(pi: ExtensionAPI) {
 		}
 
 		if (savedTools) {
-			// Restore saved tool selection (filter to only tools that still exist)
-			const allToolNames = allTools.map((t) => t.name);
-			enabledTools = new Set(
-				savedTools.filter((t: string) => allToolNames.includes(t)),
-			);
-			applyTools();
+			enabledTools = new Set(savedTools);
+			// Replacing the loadout before deferred tools register clears Pi's pending tools.
+			if (
+				savedTools.every((name) => allTools.some((tool) => tool.name === name))
+			) {
+				applyTools();
+			}
 		} else {
 			// No saved state - sync with currently active tools
 			enabledTools = new Set(pi.getActiveTools());
