@@ -86,6 +86,10 @@ plan widget. Its tests live under `tests/todo/`.
 The former flat sample extension is kept as
 `deprecated-extensions/todo_deprecated.ts` for reference.
 
+### Prefill progress
+
+`extensions/prefill-progress.ts` adds prompt-processing progress to Zentui's existing Working line through its keyed segment protocol (no Footer widget or renderer replacement). In TUI mode with that line active, it opts streaming `openai-completions` requests into `return_progress: true` only for `halogen/halogen-qwen3.8-flash-next`, `gufo/qwen3.8-flash-next`, and `strixite/qwen3.8-flash-next`; other requests remain unchanged. `Prefill 200/800 (25%) · cache 200` means 200 newly processed tokens out of 800 uncached tokens, plus 200 cached tokens, not 400 newly processed tokens. Fully cached and empty prompts have explicit labels; malformed progress is ignored and updates are coalesced at 250 ms. Progress disappears on decode, completion, cancellation/error, retry, identity changes, or shutdown, preserving Zentui's Cooking message and decode tok/s. Requires Zentui's active Working-line segment integration; without it this extension stays silent rather than competing for Pi's unkeyed working-message slot. `/reload` activates edits; focused tests live in `tests/prefill-progress.test.ts`.
+
 ## Skills, prompts & themes
 
 `skills/`, `prompts/*.md`, and `themes/*.json` are served directly by the
