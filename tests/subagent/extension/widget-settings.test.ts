@@ -124,7 +124,19 @@ test("loading settings for a tool invocation refreshes the visible widget", asyn
 	});
 });
 
-test("captures effective skill metadata without adding it to child prompts", () => {
+test.each([
+	{ messageType: "user", prompt: "Start work" },
+	{
+		messageType: "custom",
+		message: {
+			role: "custom",
+			customType: "subagent-completion",
+			content: "Child finished",
+			display: true,
+			timestamp: 1,
+		},
+	},
+])("captures effective skill metadata for $messageType starts", (event) => {
 	const handlers = new Map<string, (event: any) => void>();
 	const setEffectiveSkillCatalog = mock();
 	const runtime = {
@@ -154,6 +166,9 @@ test("captures effective skill metadata without adding it to child prompts", () 
 	const skills = [{ name: "dynamic-skill", description: "hidden" }];
 
 	handlers.get("before_agent_start")?.({
+		...event,
+		type: "before_agent_start",
+		systemPrompt: "",
 		systemPromptOptions: { cwd: "/work", skills },
 	});
 

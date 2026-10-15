@@ -545,28 +545,53 @@ describe("todoExtension", () => {
 		).toBeUndefined();
 	});
 
-	it("caps repeated reminders per run and resets only that cap before the next run", async () => {
-		const { tool, handlers } = setupTodoTool();
-		await setOpenPlan(tool);
-		await endTurn(handlers);
-		await handlers.get("before_agent_start")?.({}, executionContext);
+	it.each([
+		{ messageType: "user", prompt: "Continue work" },
+		{
+			messageType: "custom",
+			message: {
+				role: "custom",
+				customType: "subagent-completion",
+				content: "Child finished",
+				display: true,
+				timestamp: 1,
+			},
+		},
+	])(
+		"resets only the reminder cap for a subsequent $messageType run",
+		async (event) => {
+			const { tool, handlers } = setupTodoTool();
+			await setOpenPlan(tool);
+			await endTurn(handlers);
+			await handlers.get("before_agent_start")?.(
+				{
+					type: "before_agent_start",
+					messageType: "user",
+					prompt: "Start work",
+				},
+				executionContext,
+			);
 
-		for (let reminder = 0; reminder < 2; reminder += 1) {
+			for (let reminder = 0; reminder < 2; reminder += 1) {
+				for (let turn = 0; turn < 8; turn += 1) await endTurn(handlers);
+				expect(
+					await handlers.get("context")?.({ messages: [] }, executionContext),
+				).toBeDefined();
+			}
 			for (let turn = 0; turn < 8; turn += 1) await endTurn(handlers);
 			expect(
 				await handlers.get("context")?.({ messages: [] }, executionContext),
-			).toBeDefined();
-		}
-		for (let turn = 0; turn < 8; turn += 1) await endTurn(handlers);
-		expect(
-			await handlers.get("context")?.({ messages: [] }, executionContext),
-		).toBeUndefined();
+			).toBeUndefined();
 
-		await handlers.get("before_agent_start")?.({}, executionContext);
-		expect(
-			await handlers.get("context")?.({ messages: [] }, executionContext),
-		).toBeDefined();
-	});
+			await handlers.get("before_agent_start")?.(
+				{ ...event, type: "before_agent_start" },
+				executionContext,
+			);
+			expect(
+				await handlers.get("context")?.({ messages: [] }, executionContext),
+			).toBeDefined();
+		},
+	);
 
 	it("resets reminder cadence on session tree restore and tolerates missing usage", async () => {
 		const { tool, handlers } = setupTodoTool();
