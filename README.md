@@ -12,11 +12,12 @@ pi-stuff/
 ├── tsconfig.json         # strict TypeScript (noEmit)
 ├── biome.json            # formatter (tabs, double quotes)
 ├── extensions/
-│   ├── *.ts              # single-file extensions (26)
+│   ├── *.ts              # single-file extensions (14)
 │   ├── accounts/         # named OAuth and API-key account switching
-│   ├── dynamic-resources/  # index.ts + skill/data
-│   ├── todo/              # phased, session-aware todo planning
-│   └── subagent/           # current subagent implementation
+│   ├── ask/              # questionnaire (excluded from loading)
+│   ├── context/          # /context window usage breakdown
+│   ├── subagent/         # current subagent implementation
+│   └── todo/             # phased, session-aware todo planning
 ├── deprecated-extensions/ # disabled implementations, including plan-mode
 ├── tests/                # extension tests and shared test helpers
 ├── prompts/              # prompt templates (.md) — package resource
@@ -26,14 +27,12 @@ pi-stuff/
 
 ## Extensions
 
-**Single-file (`extensions/*.ts`):** confirm-destructive, custom-footer,
-custom-header, dynamic-tools, git-merge-and-resolve, handoff,
-hidden-thinking-label, inline-bash, interactive-shell, message-renderer,
-model-status, notify, permission-gate, protected-paths, qna, status-line,
-summarize, titlebar-spinner, tools, truncated-tool, widget-placement,
-working-indicator.
+**Single-file (`extensions/*.ts`):** codex-usage-status, confirm-destructive,
+handoff, inline-bash, interactive-shell, notify, permission-gate,
+prefill-progress, protected-paths, qna, rg, summarize, titlebar-spinner, tools.
 
-**Directory:** `accounts`, `dynamic-resources`, `todo`, `subagent`.
+**Directory:** `accounts`, `context`, `subagent`, `todo`. `ask` lives here too
+but is excluded by the manifest (`!extensions/ask/*.ts`).
 
 **Deprecated reference implementations:** `deprecated-extensions/` contains
 the plan mode, prompt customizer, rainbow editor, structured output, former
@@ -100,7 +99,7 @@ source.
 ## Agents
 
 Agents are **not** a Pi package resource (no manifest key). The deprecated
-The deprecated `subagent_deprecated` implementation keeps its role prompts in
+`subagent_deprecated` implementation keeps its role prompts in
 `deprecated-extensions/subagent_deprecated/prompts/*.md` and stays outside
 package loading while replacement work proceeds.
 
@@ -111,10 +110,10 @@ root):
 
 ```jsonc
 "pi": {
-  "extensions": ["./extensions/*.ts", "./extensions/*/index.ts"],
-  "prompts":    ["./prompts"],
-  "themes":     ["./themes"],
-  "skills":     ["./skills"]
+  "extensions": ["extensions/*.ts", "extensions/*/index.ts", "!extensions/ask/*.ts"],
+  "prompts":    ["prompts"],
+  "themes":     ["themes"],
+  "skills":     ["skills", "!skills/adversarial-qa", "!skills/agent-native-hardening", "!skills/chrome-cdp"]
 }
 ```
 
@@ -178,7 +177,7 @@ Update with `pi update --extensions`, bump with
 
 ```bash
 bun install        # dev tooling (typescript, biome, pi core types)
-bun run check      # biome format check + tsc --noEmit
+bun run check      # biome check + tsc --noEmit + bun test
 bun run format     # autofix formatting
 ```
 
